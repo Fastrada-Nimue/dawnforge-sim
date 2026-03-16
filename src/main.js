@@ -1,3 +1,4 @@
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const arenaWrap = document.querySelector(".arena-wrap");
@@ -57,6 +58,15 @@ let startScreenBoxes = [];
 
 const powerOrder = ["fire", "earth", "water", "wind"];
 const basePowerOrder = ["arc", ...powerOrder];
+
+// Elemental combo definitions — priority order matters; first entry wins on overlapping skills.
+// magma is unlock-gated via upgrade card and handled separately.
+const COMBO_DEFS = [
+  { key: "mist",      a: "fire",  b: "water", minLevel: 3 },
+  { key: "storm",     a: "water", b: "wind",  minLevel: 3 },
+  { key: "chain",     a: "arc",   b: "wind",  minLevel: 3 },
+  { key: "quicksand", a: "earth", b: "water", minLevel: 3 },
+];
 
 const game = {
   mode: "hub", // hub | running | upgrade | gameover | victory
@@ -137,6 +147,7 @@ function openPopoutWindow() {
   } else {
     setToast("Pop-out was blocked by the browser.", "danger");
   }
+
 }
 
 function setupInput() {
@@ -222,12 +233,16 @@ function startGame() {
   };
 
   game.powers = {
-    arc: { level: 1, cd: 0.35, timer: 0, color: "#d6ecff", name: "Arc Bolt", unlocked: false, damageMul: 1, pierce: 0 },
+    arc: { level: 1, cd: 0.28, timer: 0, color: "#d6ecff", name: "Arc Bolt", unlocked: false, damageMul: 1.25, pierce: 1 },
     fire: { level: 1, cd: 1.0, timer: 0, color: "#ff8a52", name: "Fire", unlocked: false, areaMul: 1, burnDamageMul: 1, burnDurationBonus: 0 },
-    earth: { level: 1, cd: 1.8, timer: 0, color: "#b7925a", name: "Earth", unlocked: false, damageMul: 1, slowBonus: 0, sizeMul: 1 },
-    water: { level: 1, cd: 1.5, timer: 0, color: "#65b9ff", name: "Water", unlocked: false, radiusMul: 1, healMul: 1, damageMul: 1 },
-    wind: { level: 1, cd: 1.2, timer: 0, color: "#bdeeff", name: "Wind", unlocked: false, widthMul: 1, pushMul: 1, durationMul: 1 },
-    magma: { level: 0, cd: 2.8, timer: 0, color: "#ff533d", name: "Magma", unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
+    earth: { level: 1, cd: 1.4, timer: 0, color: "#b7925a", name: "Earth", unlocked: false, damageMul: 1.22, slowBonus: 0.15, sizeMul: 1.15 },
+    water: { level: 1, cd: 1.1, timer: 0, color: "#65b9ff", name: "Water", unlocked: false, radiusMul: 1.18, healMul: 1.18, damageMul: 1.18 },
+    wind: { level: 1, cd: 0.95, timer: 0, color: "#bdeeff", name: "Wind", unlocked: false, widthMul: 1.18, pushMul: 1.18, durationMul: 1.18 },
+    magma:     { level: 0, cd: 2.8,  timer: 0, color: "#ff533d", name: "Magma",     unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
+    mist:      { level: 0, cd: 2.0,  timer: 0, color: "#aaddcc", name: "Mist"      },
+    storm:     { level: 0, cd: 2.2,  timer: 0, color: "#88bbff", name: "Storm"     },
+    chain:     { level: 0, cd: 0.6,  timer: 0, color: "#b8d8ff", name: "Chain Arc" },
+    quicksand: { level: 0, cd: 2.4,  timer: 0, color: "#c8a868", name: "Quicksand" },
   };
 
   openStartingPowerDraft();
@@ -268,7 +283,7 @@ function update(dt) {
 
   game.time += dt;
 
-  for (const key of ["arc", "fire", "earth", "water", "wind", "magma"]) {
+  for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "quicksand"]) {
     if (!game.powers[key]) continue;
     game.powers[key].timer = Math.max(0, game.powers[key].timer - dt);
   }
@@ -335,8 +350,7 @@ function spawnEnemy() {
           damage: (14 + game.wave * 1.4) * (1 - earlyEase * 0.12),
           atkCd: 0,
           color: "#9ae2ff",
-          burn: 0,
-          slow: 0,
+          burn: 0, slow: 0, stun: 0, snare: 0,
         }
       : type === "brute"
       ? {
@@ -350,8 +364,7 @@ function spawnEnemy() {
           damage: (38 + game.wave * 3) * (1 - earlyEase * 0.08),
           atkCd: 0,
           color: "#de9467",
-          burn: 0,
-          slow: 0,
+          burn: 0, slow: 0, stun: 0, snare: 0,
         }
       : {
           type,
@@ -364,8 +377,7 @@ function spawnEnemy() {
           damage: (20 + game.wave * 2) * (1 - earlyEase * 0.14),
           atkCd: 0,
           color: "#e17f7f",
-          burn: 0,
-          slow: 0,
+          burn: 0, slow: 0, stun: 0, snare: 0,
         };
 
   game.enemies.push(enemy);
@@ -373,8 +385,13 @@ function spawnEnemy() {
 
 function updateEnemies(dt) {
   for (const e of game.enemies) {
-    const slowMul = e.slow > 0 ? 0.52 : 1;
+    const stunned = e.stun > 0;
+    const snared = e.snare > 0;
+    const slowMul = stunned ? 0 : snared ? 0.14 : (e.slow > 0 ? 0.50 : 1);
     const targetY = game.wall.y - 3;
+
+    if (e.stun > 0) { e.stun -= dt; spawnSpark(e.x, e.y, "#88ccff", 0.7); }
+    if (e.snare > 0) { e.snare -= dt; spawnSpark(e.x, e.y, "#c8a848", 0.4); }
 
     if (e.y + e.r < targetY) {
       e.y += e.speed * slowMul * dt;
@@ -516,10 +533,33 @@ function getUnlockedBasePowers() {
   return basePowerOrder.filter((k) => game.powers[k]?.unlocked);
 }
 
+// Returns array of volley powers. Combos consume base skills by priority order.
 function getUnlockedVolleyPowers() {
-  const out = getUnlockedBasePowers();
-  if (game.magmaUnlocked && game.powers?.magma?.unlocked) out.push("magma");
-  return out;
+  if (!game.powers) return [];
+  const consumed = new Set();
+  const activeComboKeys = [];
+
+  // Magma (unlock-gated via upgrade card) takes priority over other fire/earth combos
+  if (game.magmaUnlocked && game.powers.magma?.unlocked) {
+    activeComboKeys.push("magma");
+    consumed.add("fire");
+    consumed.add("earth");
+  }
+
+  // Auto-combos: only activate when BOTH components are unlocked AND each is level >= 3
+  for (const def of COMBO_DEFS) {
+    if (consumed.has(def.a) || consumed.has(def.b)) continue;
+    const pa = game.powers[def.a];
+    const pb = game.powers[def.b];
+    if (pa?.unlocked && pb?.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
+      activeComboKeys.push(def.key);
+      consumed.add(def.a);
+      consumed.add(def.b);
+    }
+  }
+
+  const baseActive = basePowerOrder.filter(k => game.powers[k]?.unlocked && !consumed.has(k));
+  return [...baseActive, ...activeComboKeys];
 }
 
 function getLockedBasePowers() {
@@ -539,6 +579,67 @@ function getOffsetTarget(tx, ty, angleOffset) {
 }
 
 function tryCastPower(key, tx, ty, angleOffset = 0) {
+  const aimed = getOffsetTarget(tx, ty, angleOffset);
+
+  // --- Auto-combo skills (use own timer, scale from component skill levels) ---
+  const comboDef = COMBO_DEFS.find(d => d.key === key);
+  if (comboDef) {
+    const cp = game.powers[key];
+    if (!cp || cp.timer > 0) return false;
+    cp.timer = cp.cd * game.cooldownMul;
+    const la = game.powers[comboDef.a]?.level ?? 1;
+    const lb = game.powers[comboDef.b]?.level ?? 1;
+    const lAvg = (la + lb) * 0.5;
+
+    if (key === "mist") {
+      game.zones.push({
+        type: "mist",
+        x: aimed.x, y: aimed.y,
+        r: 56 + lAvg * 8,
+        dps: (22 + lAvg * 5) * game.globalDamageMul,
+        slow: 0.7,
+        burn: 0.6 + 0.08 * lAvg,
+        life: 1.9,
+      });
+    } else if (key === "storm") {
+      game.zones.push({
+        type: "storm",
+        x: aimed.x, y: aimed.y,
+        r: 68 + lAvg * 9,
+        dps: (28 + lAvg * 6) * game.globalDamageMul,
+        stun: 0.65 + 0.08 * lAvg,
+        slow: 0.75,
+        life: 1.6,
+      });
+    } else if (key === "chain") {
+      const bolts = 3 + Math.floor(lAvg / 2);
+      for (let i = 0; i < bolts; i++) {
+        const angle = aimed.angle + (i - (bolts - 1) * 0.5) * 0.16;
+        game.projectiles.push({
+          type: "arcBolt",
+          x: game.hero.x, y: game.hero.y - 8,
+          vx: Math.cos(angle) * 560,
+          vy: Math.sin(angle) * 560,
+          life: 0.75, r: 4,
+          damage: (20 + lAvg * 1.8) * game.globalDamageMul,
+          pierce: 3,
+        });
+      }
+    } else if (key === "quicksand") {
+      game.zones.push({
+        type: "quicksand",
+        x: aimed.x, y: aimed.y,
+        r: 52 + lAvg * 8,
+        dps: (14 + lAvg * 3) * game.globalDamageMul,
+        snare: 1.2 + 0.1 * lAvg,
+        slow: 0.5,
+        life: 2.4,
+      });
+    }
+    return true;
+  }
+
+  // --- Base/vanilla powers ---
   const p = game.powers[key];
   if (!p) return false;
   if (!p.unlocked) return false;
@@ -546,7 +647,6 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
   if (p.timer > 0) return false;
 
   p.timer = p.cd * game.cooldownMul;
-  const aimed = getOffsetTarget(tx, ty, angleOffset);
 
   if (key === "arc") {
     const speed = 520;
@@ -558,7 +658,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       vy: Math.sin(aimed.angle) * speed,
       life: 0.8,
       r: 3,
-      damage: (14 + game.level * 1.3) * game.globalDamageMul * p.damageMul,
+      damage: (18 + game.level * 1.6) * game.globalDamageMul * p.damageMul,
       pierce: p.pierce,
     });
     return true;
@@ -581,7 +681,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
   }
 
   if (key === "earth") {
-    const speed = 280 + p.level * 16;
+    const speed = 320 + p.level * 18;
     game.projectiles.push({
       type: "rock",
       x: game.hero.x,
@@ -589,31 +689,31 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       vx: Math.cos(aimed.angle) * speed,
       vy: Math.sin(aimed.angle) * speed,
       life: 1.8,
-      r: 8 * p.sizeMul,
+      r: 9 * p.sizeMul,
     });
     return true;
   }
 
   if (key === "water") {
-    const r = (44 + p.level * 8) * p.radiusMul;
-    const dmg = (16 + p.level * 7) * game.globalDamageMul * p.damageMul;
-    const heal = (8 + p.level * 5) * p.healMul;
-    game.zones.push({ type: "waterBurst", x: aimed.x, y: aimed.y, r, damage: dmg, heal, life: 0.28, applied: false });
+    const r = (54 + p.level * 10) * p.radiusMul;
+    const dmg = (22 + p.level * 9) * game.globalDamageMul * p.damageMul;
+    const heal = (12 + p.level * 7) * p.healMul;
+    game.zones.push({ type: "waterBurst", x: aimed.x, y: aimed.y, r, damage: dmg, heal, life: 0.32, applied: false });
     return true;
   }
 
   if (key === "wind") {
-    const len = 420;
+    const len = 440;
     game.zones.push({
       type: "windLine",
       x1: game.hero.x,
       y1: game.hero.y,
       x2: game.hero.x + Math.cos(aimed.angle) * len,
       y2: game.hero.y + Math.sin(aimed.angle) * len,
-      width: 18 * p.widthMul,
-      dps: (26 + p.level * 8) * game.globalDamageMul,
-      push: (68 + p.level * 12) * p.pushMul,
-      life: 0.42 * p.durationMul,
+      width: 22 * p.widthMul,
+      dps: (32 + p.level * 10) * game.globalDamageMul,
+      push: (88 + p.level * 14) * p.pushMul,
+      life: 0.52 * p.durationMul,
     });
     return true;
   }
@@ -623,11 +723,11 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       type: "lava",
       x: aimed.x,
       y: aimed.y,
-      r: (64 + p.level * 5) * p.radiusMul,
-      dps: (52 + p.level * 14) * game.globalDamageMul * p.dpsMul,
-      life: 3.3,
+      r: (74 + p.level * 7) * p.radiusMul,
+      dps: (62 + p.level * 16) * game.globalDamageMul * p.dpsMul,
+      life: 3.6,
     });
-    explodeAt(aimed.x, aimed.y, (52 + p.level * 12) * p.radiusMul, (36 + p.level * 12) * p.blastMul);
+    explodeAt(aimed.x, aimed.y, (62 + p.level * 14) * p.radiusMul, (46 + p.level * 14) * p.blastMul);
     return true;
   }
 
@@ -773,12 +873,16 @@ function startGameWithElement(key) {
   };
 
   game.powers = {
-    arc:   { level: 1, cd: 0.35, timer: 0, color: "#d6ecff", name: "Arc Bolt", unlocked: false, damageMul: 1, pierce: 0 },
-    fire:  { level: 1, cd: 1.0,  timer: 0, color: "#ff8a52", name: "Fire",     unlocked: false, areaMul: 1, burnDamageMul: 1, burnDurationBonus: 0 },
-    earth: { level: 1, cd: 1.8,  timer: 0, color: "#b7925a", name: "Earth",    unlocked: false, damageMul: 1, slowBonus: 0, sizeMul: 1 },
-    water: { level: 1, cd: 1.5,  timer: 0, color: "#65b9ff", name: "Water",    unlocked: false, radiusMul: 1, healMul: 1, damageMul: 1 },
-    wind:  { level: 1, cd: 1.2,  timer: 0, color: "#bdeeff", name: "Wind",     unlocked: false, widthMul: 1, pushMul: 1, durationMul: 1 },
-    magma: { level: 0, cd: 2.8,  timer: 0, color: "#ff533d", name: "Magma",    unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
+    arc:       { level: 1, cd: 0.28, timer: 0, color: "#d6ecff", name: "Arc Bolt", unlocked: false, damageMul: 1.25, pierce: 1 },
+    fire:      { level: 1, cd: 1.0,  timer: 0, color: "#ff8a52", name: "Fire",     unlocked: false, areaMul: 1, burnDamageMul: 1, burnDurationBonus: 0 },
+    earth:     { level: 1, cd: 1.4,  timer: 0, color: "#b7925a", name: "Earth",    unlocked: false, damageMul: 1.22, slowBonus: 0.15, sizeMul: 1.15 },
+    water:     { level: 1, cd: 1.1,  timer: 0, color: "#65b9ff", name: "Water",    unlocked: false, radiusMul: 1.18, healMul: 1.18, damageMul: 1.18 },
+    wind:      { level: 1, cd: 0.95, timer: 0, color: "#bdeeff", name: "Wind",     unlocked: false, widthMul: 1.18, pushMul: 1.18, durationMul: 1.18 },
+    magma:     { level: 0, cd: 2.8,  timer: 0, color: "#ff533d", name: "Magma",    unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
+    mist:      { level: 0, cd: 2.0,  timer: 0, color: "#aaddcc", name: "Mist"      },
+    storm:     { level: 0, cd: 2.2,  timer: 0, color: "#88bbff", name: "Storm"     },
+    chain:     { level: 0, cd: 0.6,  timer: 0, color: "#b8d8ff", name: "Chain Arc" },
+    quicksand: { level: 0, cd: 2.4,  timer: 0, color: "#c8a868", name: "Quicksand" },
   };
 
   unlockPower(key, true);
@@ -1181,44 +1285,89 @@ function pickUnique(arr, count) {
   return out;
 }
 
-function endGame(victory) {
-  game.mode = victory ? "victory" : "gameover";
+function updateZones(dt) {
+  for (const z of game.zones) {
+    z.life -= dt;
 
-  const gain = Math.floor(game.runEssence + (victory ? 160 : 45));
-  game.meta.totalEssence += gain;
-  game.meta.bestWave = Math.max(game.meta.bestWave, game.wave);
-  saveMeta(game.meta);
+    if (z.type === "waterBurst" && !z.applied) {
+      z.applied = true;
+      for (const e of game.enemies) {
+        const d = Math.hypot(e.x - z.x, e.y - z.y);
+        if (d < z.r + e.r) {
+          e.hp -= z.damage;
+          e.slow = Math.max(e.slow, 0.9 + game.powers.water.level * 0.15);
+        }
+      }
+      game.wall.hp = Math.min(game.wall.maxHp, game.wall.hp + z.heal);
+    }
 
-  if (victory) {
-    hideDefeatModal();
-    ui.overlayTitle.textContent = "Victory";
-    ui.overlayCards.innerHTML = `
-      <div class="card" style="cursor:default">
-        <b>You held all waves.</b><br>
-        Wave reached: ${game.wave}<br>
-        Level reached: ${game.level}<br>
-        Kills: ${game.kills}<br>
-        Essence gained: ${gain}
-      </div>
-    `;
-  } else {
-    renderDefeatOverlay(gain);
+    if (z.type === "windLine") {
+      for (const e of game.enemies) {
+        const d = distanceToSegment(e.x, e.y, z.x1, z.y1, z.x2, z.y2);
+        if (d < z.width + e.r) {
+          e.hp -= z.dps * dt;
+          e.y -= z.push * dt;
+        }
+      }
+    }
+
+    if (z.type === "lava") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, 0.6);
+        }
+      }
+    }
+
+    // Mist: slow, burn, dps
+    if (z.type === "mist") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          e.burn = Math.max(e.burn, z.burn);
+        }
+      }
+    }
+    // Storm: stun, dps, slow
+    if (z.type === "storm") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          if (!e.stun || e.stun < z.stun) e.stun = z.stun;
+        }
+      }
+    }
+    // Supercharged Mist: dps, slow
+    if (z.type === "chargedMist") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+        }
+      }
+    }
+    // Quicksand: dps, snare, slow
+    if (z.type === "quicksand") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          if (!e.snare || e.snare < z.snare) e.snare = z.snare;
+        }
+      }
+    }
   }
 
-  setToast(victory ? "Great defense. Start again to try a new build." : "Try different power upgrades and fusion timing.", victory ? "good" : "danger");
-  updateUi();
+  game.zones = game.zones.filter((z) => z.life > 0);
 }
 
 function renderDefeatUpgradeMenu() {
-  const wrap = document.createElement("div");
-  wrap.className = "card";
-  wrap.style.cursor = "default";
-  wrap.innerHTML = `<b>Defeat Upgrades</b><br>Spend essence to get stronger next run.`;
-  ui.defeatModalCards.appendChild(wrap);
-
   for (const up of DEFEAT_UPGRADES) {
     const current = game.meta.defeatUpgrades[up.id] || 0;
-    const dynamicCost = getDefeatUpgradeCost(up, current);
+    const dynamicCost = Math.round(up.cost * Math.pow(1.5, current));
     const btn = document.createElement("button");
     btn.className = "card";
     btn.innerHTML = `<b>${up.name} ${current}/${up.max}</b><br>${up.desc}<br>Cost: ${dynamicCost}`;
@@ -1458,6 +1607,37 @@ function drawZones() {
       ctx.fillStyle = "rgba(255, 95, 60, 0.30)";
       circle(z.x, z.y, z.r);
       ctx.strokeStyle = "rgba(255, 140, 90, 0.75)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else if (z.type === "mist") {
+      ctx.fillStyle = "rgba(160, 220, 190, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(160, 220, 190, 0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = "rgba(160, 220, 190, 0.28)";
+      circle(z.x, z.y, z.r * 0.55);
+    } else if (z.type === "storm") {
+      const pulse = (Math.sin(game.time * 8) * 0.12 + 0.88);
+      ctx.fillStyle = `rgba(120, 180, 255, ${0.18 * pulse})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = `rgba(130, 190, 255, ${0.65 * pulse})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(200, 230, 255, ${0.35 * pulse})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(z.x, z.y, z.r * 0.5, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (z.type === "quicksand") {
+      ctx.fillStyle = "rgba(180, 150, 80, 0.22)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(200, 165, 90, 0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(200, 165, 90, 0.25)";
+      ctx.beginPath();
+      ctx.arc(z.x, z.y, z.r * 0.5 + Math.sin(game.time * 3) * 4, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
@@ -1475,33 +1655,107 @@ function drawSparks() {
 function drawPowerBar() {
   if (!game.powers) return;
 
-  const keys = ["arc", ...powerOrder, "magma"];
-  const totalW = keys.length * 128 + (keys.length - 1) * 8;
+  // Determine active combos and consumed base skills
+  const consumed = new Set();
+  const activeComboKeys = [];
+  if (game.magmaUnlocked && game.powers.magma?.unlocked) {
+    activeComboKeys.push("magma"); consumed.add("fire"); consumed.add("earth");
+  }
+  for (const def of COMBO_DEFS) {
+    if (consumed.has(def.a) || consumed.has(def.b)) continue;
+    const pa = game.powers[def.a], pb = game.powers[def.b];
+    if (pa?.unlocked && pb?.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
+      activeComboKeys.push(def.key); consumed.add(def.a); consumed.add(def.b);
+    }
+  }
+
+  // Build display list: base powers not consumed + active combos
+  const displayKeys = [];
+  for (const k of basePowerOrder) displayKeys.push(k); // always show all base
+  for (const k of activeComboKeys) displayKeys.push(k);
+  if (game.magmaUnlocked && game.powers.magma?.unlocked && !activeComboKeys.includes("magma"))
+    displayKeys.push("magma");
+
+  // Merge hints for base skills (only when partner is also unlocked but not yet level 3)
+  const mergeHints = {};
+  for (const def of COMBO_DEFS) {
+    const pa = game.powers[def.a], pb = game.powers[def.b];
+    if (pa?.unlocked && pb?.unlocked && (pa.level < def.minLevel || pb.level < def.minLevel)) {
+      const hint = `→${capitalize(def.key)}@Lv${def.minLevel}`;
+      if (!mergeHints[def.a]) mergeHints[def.a] = hint;
+      if (!mergeHints[def.b]) mergeHints[def.b] = hint;
+    }
+  }
+
+  const BOX_W = 120, BOX_H = 46, GAP = 6;
+  const totalW = displayKeys.length * BOX_W + (displayKeys.length - 1) * GAP;
   let x = WIDTH * 0.5 - totalW * 0.5;
-  const y = HEIGHT - 52;
+  const y = HEIGHT - 56;
 
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
+  for (const key of displayKeys) {
     const p = game.powers[key];
-    const unlocked = !!p.unlocked && (key !== "magma" || game.magmaUnlocked);
+    if (!p) { x += BOX_W + GAP; continue; }
 
-    ctx.fillStyle = unlocked ? "#2f2a1a" : "#1d222d";
-    ctx.fillRect(x, y, 128, 36);
-    ctx.strokeStyle = unlocked ? "#ffd285" : "#41506a";
-    ctx.strokeRect(x, y, 128, 36);
+    const comboDef = COMBO_DEFS.find(d => d.key === key);
+    const isCombo = !!comboDef || key === "magma";
+    const isConsumed = consumed.has(key);
+    const isActive = (isCombo && activeComboKeys.includes(key)) ||
+                     (!isCombo && p.unlocked && !isConsumed && (key !== "magma" || game.magmaUnlocked));
 
-    ctx.fillStyle = unlocked ? p.color : "#6f7a8a";
-    ctx.font = "12px Trebuchet MS";
-    const suffix = unlocked ? `Lv.${p.level}` : "Locked";
-    ctx.fillText(`${p.name} ${suffix}`, x + 8, y + 15);
+    // Combo level = avg of component levels; base level = p.level
+    let displayLevel = p.level;
+    if (comboDef) {
+      const la = game.powers[comboDef.a]?.level ?? 1;
+      const lb = game.powers[comboDef.b]?.level ?? 1;
+      displayLevel = Math.floor((la + lb) * 0.5);
+    }
 
-    const cdRatio = unlocked && p.cd > 0 ? 1 - p.timer / (p.cd * game.cooldownMul) : 0;
+    // Box
+    ctx.fillStyle = isActive && isCombo ? "#14202e" : isActive ? "#2a251a" : isConsumed ? "#181e26" : "#1d222d";
+    ctx.fillRect(x, y, BOX_W, BOX_H);
+    ctx.lineWidth = isActive && isCombo ? 2 : 1;
+    ctx.strokeStyle = isActive && isCombo ? "#7ae8d8"
+      : isActive ? "#ffd285"
+      : isConsumed ? "#7ae8d855"
+      : "#41506a";
+    ctx.strokeRect(x, y, BOX_W, BOX_H);
+
+    // Name + Level
+    ctx.fillStyle = isConsumed ? "#7ae8d888" : isActive ? p.color : "#6f7a8a";
+    ctx.font = "bold 11px Trebuchet MS";
+    const lvSuffix = isActive ? ` Lv.${displayLevel}` : p.unlocked ? ` Lv.${displayLevel}` : " Locked";
+    ctx.fillText(p.name + lvSuffix, x + 6, y + 14);
+
+    // Sub-line: combo source pair OR merge hint OR consumed-into label
+    ctx.font = "9px Trebuchet MS";
+    if (isCombo && isActive && comboDef) {
+      ctx.fillStyle = "#7ae8d8";
+      ctx.fillText(`${capitalize(comboDef.a)}+${capitalize(comboDef.b)}`, x + 6, y + 26);
+    } else if (isCombo && isActive && key === "magma") {
+      ctx.fillStyle = "#ff9966";
+      ctx.fillText("Fire+Earth", x + 6, y + 26);
+    } else if (isConsumed) {
+      const comboName = activeComboKeys.find(ck => {
+        const d = COMBO_DEFS.find(dd => dd.key === ck);
+        return d && (d.a === key || d.b === key);
+      }) || (key === "fire" || key === "earth" ? "magma" : null);
+      ctx.fillStyle = "#7ae8d866";
+      ctx.fillText(comboName ? `→${capitalize(comboName)}` : "merged", x + 6, y + 26);
+    } else if (!isCombo && mergeHints[key]) {
+      ctx.fillStyle = "#ffa040";
+      ctx.fillText(mergeHints[key], x + 6, y + 26);
+    }
+
+    // CD bar
+    const cooldownRef = isCombo ? game.powers[key].cd : p.cd;
+    const cdRatio = isActive && cooldownRef > 0
+      ? 1 - game.powers[key].timer / (cooldownRef * (game.cooldownMul || 1)) : 0;
     ctx.fillStyle = "#112031";
-    ctx.fillRect(x + 8, y + 22, 112, 8);
-    ctx.fillStyle = !unlocked ? "#4d5766" : p.timer <= 0 ? "#7ee89f" : "#8cb7ff";
-    ctx.fillRect(x + 8, y + 22, 112 * Math.max(0, Math.min(1, cdRatio)), 8);
+    ctx.fillRect(x + 6, y + 32, BOX_W - 12, 7);
+    ctx.fillStyle = !isActive ? "#4d5766" : game.powers[key].timer <= 0 ? "#7ee89f" : "#8cb7ff";
+    ctx.fillRect(x + 6, y + 32, (BOX_W - 12) * Math.max(0, Math.min(1, cdRatio)), 7);
 
-    x += 136;
+    x += BOX_W + GAP;
   }
 }
 
