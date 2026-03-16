@@ -31,6 +31,7 @@ const ui = {
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 const MAX_WAVES = 10;
+const MAX_SPARKS = 900;
 const SAVE_KEY = "dawnforge.walldef.v1";
 
 const DEFEAT_UPGRADES = [
@@ -397,8 +398,14 @@ function updateEnemies(dt) {
     const slowMul = stunned ? 0 : snared ? 0.14 : (e.slow > 0 ? 0.50 : 1);
     const targetY = game.wall.y - 3;
 
-    if (e.stun > 0) { e.stun -= dt; spawnSpark(e.x, e.y, "#88ccff", 0.7); }
-    if (e.snare > 0) { e.snare -= dt; spawnSpark(e.x, e.y, "#c8a848", 0.4); }
+    if (e.stun > 0) {
+      e.stun -= dt;
+      if (Math.random() < dt * 6) spawnSpark(e.x, e.y, "#88ccff", 0.7);
+    }
+    if (e.snare > 0) {
+      e.snare -= dt;
+      if (Math.random() < dt * 4) spawnSpark(e.x, e.y, "#c8a848", 0.4);
+    }
 
     if (e.y + e.r < targetY) {
       e.y += e.speed * slowMul * dt;
@@ -1767,6 +1774,7 @@ function drawPowerBar() {
 }
 
 function spawnSpark(x, y, color, mult) {
+  if (game.sparks.length >= MAX_SPARKS) return;
   const angle = Math.random() * Math.PI * 2;
   const speed = 25 + Math.random() * 80 * mult;
   game.sparks.push({
