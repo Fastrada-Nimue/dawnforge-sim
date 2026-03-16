@@ -34,6 +34,11 @@ const MAX_WAVES = 10;
 const MAX_SPARKS = 900;
 const SAVE_KEY = "dawnforge.walldef.v1";
 
+const runtimeState = {
+  fatalError: false,
+  errorCount: 0,
+};
+
 const DEFEAT_UPGRADES = [
   { id: "wallTech", name: "Wall Engineering", cost: 80, desc: "+120 starting wall HP (stacking)", max: 8 },
   { id: "xpBoost", name: "Battle Study", cost: 95, desc: "+12% XP gain (stacking)", max: 6 },
@@ -102,6 +107,7 @@ setupUi();
 applyWindowMode();
 resetOverlayToFeed();
 feed("Choose an element on the canvas to begin.");
+installRuntimeGuards();
 updateUi();
 requestAnimationFrame(loop);
 
@@ -277,13 +283,46 @@ function getEnemyAttackCooldown(enemyType) {
 }
 
 function loop(ts) {
+  if (runtimeState.fatalError) return;
   if (!game.lastTs) game.lastTs = ts;
   const dt = Math.min(0.033, (ts - game.lastTs) / 1000);
   game.lastTs = ts;
 
-  update(dt);
-  render();
+  try {
+    update(dt);
+    render();
+  } catch (err) {
+    reportRuntimeError("Loop", err);
+    return;
+  }
   requestAnimationFrame(loop);
+}
+
+function installRuntimeGuards() {
+  window.addEventListener("error", (ev) => {
+    const msg = ev && ev.message ? ev.message : "Unknown script error";
+    const where = ev && ev.filename ? `${ev.filename}:${ev.lineno || 0}` : "runtime";
+    reportRuntimeError(where, msg);
+  });
+
+  window.addEventListener("unhandledrejection", (ev) => {
+    const reason = ev && ev.reason ? (ev.reason.message || String(ev.reason)) : "Promise rejection";
+    reportRuntimeError("Promise", reason);
+  });
+}
+
+function reportRuntimeError(where, err) {
+  runtimeState.errorCount += 1;
+  const raw = err && err.message ? err.message : String(err);
+  const msg = `${where}: ${raw}`.slice(0, 220);
+
+  input.mouseDown = false;
+  setToast("Runtime issue detected. Run paused.", "danger");
+  ui.overlayTitle.textContent = "Runtime Error";
+  ui.overlayCards.innerHTML = `<div class="card" style="cursor:default"><b>Game paused to prevent a crash.</b><br>${msg}<br>Refresh to continue.</div>`;
+
+  // If errors start cascading, stop the loop completely to avoid browser lockups.
+  if (runtimeState.errorCount >= 2) runtimeState.fatalError = true;
 }
 
 function update(dt) {
