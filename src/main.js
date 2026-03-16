@@ -99,13 +99,13 @@ const game = {
 setupInput();
 setupUi();
 applyWindowMode();
-resetOverlayToFeed();
 updateUi();
+startGame();          // auto-prompt element selection on page load
 requestAnimationFrame(loop);
 
 function setupUi() {
   ui.startBtn.textContent = "Pick Starting Element";
-  ui.startBtn.onclick = () => { game.mode = "hub"; updateUi(); };
+  ui.startBtn.onclick = () => startGame();
   if (ui.restartBtn) ui.restartBtn.onclick = () => {
     hideDefeatModal();
     input.mouseDown = false;
