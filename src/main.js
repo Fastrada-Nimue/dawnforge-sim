@@ -537,7 +537,7 @@ function castSelectedPower(tx, ty) {
 
 function getUnlockedBasePowers() {
   if (!game.powers) return [];
-  return basePowerOrder.filter((k) => game.powers[k]?.unlocked);
+  return basePowerOrder.filter((k) => game.powers[k] && game.powers[k].unlocked);
 }
 
 // Returns array of volley powers. Combos consume base skills by priority order.
@@ -547,7 +547,7 @@ function getUnlockedVolleyPowers() {
   const activeComboKeys = [];
 
   // Magma (unlock-gated via upgrade card) takes priority over other fire/earth combos
-  if (game.magmaUnlocked && game.powers.magma?.unlocked) {
+  if (game.magmaUnlocked && game.powers.magma && game.powers.magma.unlocked) {
     activeComboKeys.push("magma");
     consumed.add("fire");
     consumed.add("earth");
@@ -558,20 +558,20 @@ function getUnlockedVolleyPowers() {
     if (consumed.has(def.a) || consumed.has(def.b)) continue;
     const pa = game.powers[def.a];
     const pb = game.powers[def.b];
-    if (pa?.unlocked && pb?.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
+    if (pa && pb && pa.unlocked && pb.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
       activeComboKeys.push(def.key);
       consumed.add(def.a);
       consumed.add(def.b);
     }
   }
 
-  const baseActive = basePowerOrder.filter(k => game.powers[k]?.unlocked && !consumed.has(k));
+  const baseActive = basePowerOrder.filter(k => game.powers[k] && game.powers[k].unlocked && !consumed.has(k));
   return [...baseActive, ...activeComboKeys];
 }
 
 function getLockedBasePowers() {
   if (!game.powers) return [];
-  return basePowerOrder.filter((k) => !game.powers[k]?.unlocked);
+  return basePowerOrder.filter((k) => !game.powers[k] || !game.powers[k].unlocked);
 }
 
 function getOffsetTarget(tx, ty, angleOffset) {
@@ -594,8 +594,8 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
     const cp = game.powers[key];
     if (!cp || cp.timer > 0) return false;
     cp.timer = cp.cd * game.cooldownMul;
-    const la = game.powers[comboDef.a]?.level ?? 1;
-    const lb = game.powers[comboDef.b]?.level ?? 1;
+    const la = (game.powers[comboDef.a] && game.powers[comboDef.a].level) || 1;
+    const lb = (game.powers[comboDef.b] && game.powers[comboDef.b].level) || 1;
     const lAvg = (la + lb) * 0.5;
 
     if (key === "mist") {
@@ -1020,7 +1020,7 @@ function openUpgradeDraft() {
 
 function addElementUpgradeChoices(pool, key) {
   const power = game.powers[key];
-  if (!power?.unlocked) return;
+  if (!power || !power.unlocked) return;
 
   if (key === "arc") {
     pool.push({
@@ -1402,7 +1402,7 @@ function renderDefeatOverlay(gainOverride) {
     Wave reached: ${game.wave}<br>
     Level reached: ${game.level}<br>
     Kills: ${game.kills}<br>
-    Essence gained: ${Math.floor(gainOverride ?? 45 + game.runEssence)}<br>
+    Essence gained: ${Math.floor(gainOverride != null ? gainOverride : (45 + game.runEssence))}<br>
     Meta essence: ${Math.floor(game.meta.totalEssence)}<br>
     Essence bonus: ${(essenceMul * 100).toFixed(0)}%
   `;
@@ -1534,7 +1534,7 @@ function drawXpHud() {
   if (nextHint) {
     ctx.fillStyle = "#9ec7ff";
     ctx.fillText(nextHint, x + w + 14, y + 9);
-  } else if (game.powers?.fire?.unlocked && game.powers?.earth?.unlocked && !game.magmaUnlocked) {
+  } else if (game.powers && game.powers.fire && game.powers.fire.unlocked && game.powers.earth && game.powers.earth.unlocked && !game.magmaUnlocked) {
     ctx.fillStyle = "#ffb18c";
     ctx.fillText("Next: Magma via Fire+Earth level 3", x + w + 14, y + 9);
   }
@@ -1665,13 +1665,13 @@ function drawPowerBar() {
   // Determine active combos and consumed base skills
   const consumed = new Set();
   const activeComboKeys = [];
-  if (game.magmaUnlocked && game.powers.magma?.unlocked) {
+  if (game.magmaUnlocked && game.powers.magma && game.powers.magma.unlocked) {
     activeComboKeys.push("magma"); consumed.add("fire"); consumed.add("earth");
   }
   for (const def of COMBO_DEFS) {
     if (consumed.has(def.a) || consumed.has(def.b)) continue;
     const pa = game.powers[def.a], pb = game.powers[def.b];
-    if (pa?.unlocked && pb?.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
+    if (pa && pb && pa.unlocked && pb.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
       activeComboKeys.push(def.key); consumed.add(def.a); consumed.add(def.b);
     }
   }
@@ -1680,14 +1680,14 @@ function drawPowerBar() {
   const displayKeys = [];
   for (const k of basePowerOrder) displayKeys.push(k); // always show all base
   for (const k of activeComboKeys) displayKeys.push(k);
-  if (game.magmaUnlocked && game.powers.magma?.unlocked && !activeComboKeys.includes("magma"))
+  if (game.magmaUnlocked && game.powers.magma && game.powers.magma.unlocked && !activeComboKeys.includes("magma"))
     displayKeys.push("magma");
 
   // Merge hints for base skills (only when partner is also unlocked but not yet level 3)
   const mergeHints = {};
   for (const def of COMBO_DEFS) {
     const pa = game.powers[def.a], pb = game.powers[def.b];
-    if (pa?.unlocked && pb?.unlocked && (pa.level < def.minLevel || pb.level < def.minLevel)) {
+    if (pa && pb && pa.unlocked && pb.unlocked && (pa.level < def.minLevel || pb.level < def.minLevel)) {
       const hint = `→${capitalize(def.key)}@Lv${def.minLevel}`;
       if (!mergeHints[def.a]) mergeHints[def.a] = hint;
       if (!mergeHints[def.b]) mergeHints[def.b] = hint;
@@ -1712,8 +1712,8 @@ function drawPowerBar() {
     // Combo level = avg of component levels; base level = p.level
     let displayLevel = p.level;
     if (comboDef) {
-      const la = game.powers[comboDef.a]?.level ?? 1;
-      const lb = game.powers[comboDef.b]?.level ?? 1;
+      const la = (game.powers[comboDef.a] && game.powers[comboDef.a].level) || 1;
+      const lb = (game.powers[comboDef.b] && game.powers[comboDef.b].level) || 1;
       displayLevel = Math.floor((la + lb) * 0.5);
     }
 
@@ -1894,14 +1894,15 @@ function loadMeta() {
       totalEssence: parsed.totalEssence || 0,
       bestWave: parsed.bestWave || 0,
       defeatUpgrades: {
-        wallTech: parsed.defeatUpgrades?.wallTech || 0,
-        xpBoost: parsed.defeatUpgrades?.xpBoost || 0,
-        essenceBoost: parsed.defeatUpgrades?.essenceBoost || 0,
-        damageBoost: parsed.defeatUpgrades?.damageBoost || 0,
-        castSpeedBoost: parsed.defeatUpgrades?.castSpeedBoost || 0,
+        wallTech: (parsed.defeatUpgrades && parsed.defeatUpgrades.wallTech) || 0,
+        xpBoost: (parsed.defeatUpgrades && parsed.defeatUpgrades.xpBoost) || 0,
+        essenceBoost: (parsed.defeatUpgrades && parsed.defeatUpgrades.essenceBoost) || 0,
+        damageBoost: (parsed.defeatUpgrades && parsed.defeatUpgrades.damageBoost) || 0,
+        castSpeedBoost: (parsed.defeatUpgrades && parsed.defeatUpgrades.castSpeedBoost) || 0,
       },
     };
-  } catch {
+  } catch (err) {
+    void err;
     return fallback;
   }
 }
