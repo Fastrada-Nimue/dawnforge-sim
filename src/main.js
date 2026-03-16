@@ -32,6 +32,8 @@ const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 const MAX_WAVES = 10;
 const MAX_SPARKS = 900;
+const MAX_PROJECTILES = 700;
+const MAX_ZONES = 220;
 const SAVE_KEY = "dawnforge.walldef.v1";
 
 const runtimeState = {
@@ -645,6 +647,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
     const lAvg = (la + lb) * 0.5;
 
     if (key === "mist") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
         type: "mist",
         x: aimed.x, y: aimed.y,
@@ -655,6 +658,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         life: 1.9,
       });
     } else if (key === "storm") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
         type: "storm",
         x: aimed.x, y: aimed.y,
@@ -665,8 +669,9 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         life: 1.6,
       });
     } else if (key === "chain") {
-      const bolts = 3 + Math.floor(lAvg / 2);
+      const bolts = Math.min(7, 3 + Math.floor(lAvg / 3));
       for (let i = 0; i < bolts; i++) {
+        if (game.projectiles.length >= MAX_PROJECTILES) break;
         const angle = aimed.angle + (i - (bolts - 1) * 0.5) * 0.16;
         game.projectiles.push({
           type: "arcBolt",
@@ -679,6 +684,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         });
       }
     } else if (key === "quicksand") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
         type: "quicksand",
         x: aimed.x, y: aimed.y,
@@ -703,6 +709,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
 
   if (key === "arc") {
     const speed = 520;
+    if (game.projectiles.length >= MAX_PROJECTILES) return true;
     game.projectiles.push({
       type: "arcBolt",
       x: game.hero.x,
@@ -719,6 +726,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
 
   if (key === "fire") {
     const speed = 340 + p.level * 20;
+    if (game.projectiles.length >= MAX_PROJECTILES) return true;
     game.projectiles.push({
       type: "fireball",
       x: game.hero.x,
@@ -735,6 +743,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
 
   if (key === "earth") {
     const speed = 320 + p.level * 18;
+    if (game.projectiles.length >= MAX_PROJECTILES) return true;
     game.projectiles.push({
       type: "rock",
       x: game.hero.x,
@@ -751,12 +760,14 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
     const r = (54 + p.level * 10) * p.radiusMul;
     const dmg = (22 + p.level * 9) * game.globalDamageMul * p.damageMul;
     const heal = (12 + p.level * 7) * p.healMul;
+    if (game.zones.length >= MAX_ZONES) game.zones.shift();
     game.zones.push({ type: "waterBurst", x: aimed.x, y: aimed.y, r, damage: dmg, heal, life: 0.32, applied: false });
     return true;
   }
 
   if (key === "wind") {
     const len = 440;
+    if (game.zones.length >= MAX_ZONES) game.zones.shift();
     game.zones.push({
       type: "windLine",
       x1: game.hero.x,
@@ -772,6 +783,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
   }
 
   if (key === "magma") {
+    if (game.zones.length >= MAX_ZONES) game.zones.shift();
     game.zones.push({
       type: "lava",
       x: aimed.x,
