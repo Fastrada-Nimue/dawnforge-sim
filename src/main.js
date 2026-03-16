@@ -50,7 +50,10 @@ const XP_BY_TYPE = {
 const input = {
   mouseX: WIDTH * 0.5,
   mouseY: HEIGHT * 0.5,
+  mouseDown: false,
 };
+
+let startScreenBoxes = [];
 
 const powerOrder = ["fire", "earth", "water", "wind"];
 const basePowerOrder = ["arc", ...powerOrder];
@@ -91,9 +94,14 @@ updateUi();
 requestAnimationFrame(loop);
 
 function setupUi() {
-  ui.startBtn.textContent = "Start Defense";
-  ui.startBtn.onclick = () => startGame();
-  if (ui.restartBtn) ui.restartBtn.onclick = () => startGame();
+  ui.startBtn.textContent = "Pick Starting Element";
+  ui.startBtn.onclick = () => { game.mode = "hub"; updateUi(); };
+  if (ui.restartBtn) ui.restartBtn.onclick = () => {
+    hideDefeatModal();
+    input.mouseDown = false;
+    game.mode = "hub";
+    updateUi();
+  };
   if (ui.popoutBtn) ui.popoutBtn.onclick = () => openPopoutWindow();
 
   if (ui.fullscreenBtn) {
@@ -138,12 +146,40 @@ function setupInput() {
     const sy = canvas.height / rect.height;
     input.mouseX = (e.clientX - rect.left) * sx;
     input.mouseY = (e.clientY - rect.top) * sy;
+    if (game.mode === "hub") {
+      const hovered = startScreenBoxes.some(b =>
+        input.mouseX >= b.x && input.mouseX <= b.x + b.w &&
+        input.mouseY >= b.y && input.mouseY <= b.y + b.h
+      );
+      canvas.style.cursor = hovered ? "pointer" : "default";
+    } else {
+      canvas.style.cursor = "crosshair";
+    }
   });
 
   canvas.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
+    if (game.mode === "hub") {
+      for (const box of startScreenBoxes) {
+        if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
+            input.mouseY >= box.y && input.mouseY <= box.y + box.h) {
+          startGameWithElement(box.key);
+          return;
+        }
+      }
+      return;
+    }
     if (game.mode !== "running") return;
-    castSelectedPower(input.mouseX, input.mouseY);
+    input.mouseDown = true;
+  });
+
+  canvas.addEventListener("mouseup", (e) => {
+    if (e.button !== 0) return;
+    input.mouseDown = false;
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    input.mouseDown = false;
   });
 
   window.addEventListener("keydown", (e) => {
@@ -237,6 +273,10 @@ function update(dt) {
     game.powers[key].timer = Math.max(0, game.powers[key].timer - dt);
   }
 
+  if (input.mouseDown) {
+    castSelectedPower(input.mouseX, input.mouseY);
+  }
+
   if (game.spawnLeft > 0) {
     game.spawnTimer -= dt;
     if (game.spawnTimer <= 0) {
@@ -288,7 +328,7 @@ function spawnEnemy() {
           type,
           x: 40 + Math.random() * (WIDTH - 80),
           y: -38,
-          r: 10,
+          r: 13,
           hp: 54 * scale,
           maxHp: 54 * scale,
           speed: (76 + game.wave * 6) * (1 - earlyEase * 0.18),
@@ -303,7 +343,7 @@ function spawnEnemy() {
           type,
           x: 50 + Math.random() * (WIDTH - 100),
           y: -34,
-          r: 16,
+          r: 20,
           hp: 190 * scale,
           maxHp: 190 * scale,
           speed: (34 + game.wave * 2.6) * (1 - earlyEase * 0.1),
@@ -317,7 +357,7 @@ function spawnEnemy() {
           type,
           x: 45 + Math.random() * (WIDTH - 90),
           y: -36,
-          r: 12,
+          r: 15,
           hp: 88 * scale,
           maxHp: 88 * scale,
           speed: (46 + game.wave * 3.5) * (1 - earlyEase * 0.16),
@@ -464,7 +504,7 @@ function castSelectedPower(tx, ty) {
   const center = (volleyPowers.length - 1) * 0.5;
   let castAny = false;
   for (let i = 0; i < volleyPowers.length; i++) {
-    const offset = (i - center) * 0.1;
+    const offset = (i - center) * 0.035;
     castAny = tryCastPower(volleyPowers[i], tx, ty, offset) || castAny;
   }
 
@@ -697,6 +737,147 @@ function openStartingPowerDraft() {
     feed(`${choice.name.replace("Awaken ", "")} bound to the sentinel.`);
     updateUi();
   });
+}
+
+function startGameWithElement(key) {
+  hideDefeatModal();
+  game.wave = 0;
+  game.enemies = [];
+  game.projectiles = [];
+  game.zones = [];
+  game.sparks = [];
+  game.kills = 0;
+  game.runEssence = 0;
+  game.globalDamageMul = 1 + game.meta.defeatUpgrades.damageBoost * 0.1;
+  game.cooldownMul = 1 / (1 + game.meta.defeatUpgrades.castSpeedBoost * 0.08);
+  game.magmaUnlocked = false;
+  game.level = 0;
+  game.xp = 0;
+  game.pendingLevelChoices = 0;
+  game.xpToNext = getXpForNextLevel(0);
+  game.time = 0;
+
+  game.wall = {
+    x: WIDTH * 0.5 - 190,
+    y: HEIGHT - 160,
+    w: 380,
+    h: 26,
+    maxHp: 1600 + game.meta.defeatUpgrades.wallTech * 120,
+    hp: 1600 + game.meta.defeatUpgrades.wallTech * 120,
+  };
+
+  game.hero = {
+    x: WIDTH * 0.5,
+    y: HEIGHT - 95,
+    r: 14,
+  };
+
+  game.powers = {
+    arc:   { level: 1, cd: 0.35, timer: 0, color: "#d6ecff", name: "Arc Bolt", unlocked: false, damageMul: 1, pierce: 0 },
+    fire:  { level: 1, cd: 1.0,  timer: 0, color: "#ff8a52", name: "Fire",     unlocked: false, areaMul: 1, burnDamageMul: 1, burnDurationBonus: 0 },
+    earth: { level: 1, cd: 1.8,  timer: 0, color: "#b7925a", name: "Earth",    unlocked: false, damageMul: 1, slowBonus: 0, sizeMul: 1 },
+    water: { level: 1, cd: 1.5,  timer: 0, color: "#65b9ff", name: "Water",    unlocked: false, radiusMul: 1, healMul: 1, damageMul: 1 },
+    wind:  { level: 1, cd: 1.2,  timer: 0, color: "#bdeeff", name: "Wind",     unlocked: false, widthMul: 1, pushMul: 1, durationMul: 1 },
+    magma: { level: 0, cd: 2.8,  timer: 0, color: "#ff533d", name: "Magma",    unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
+  };
+
+  unlockPower(key, true);
+  game.mode = "running";
+  resetOverlayToFeed();
+  nextWave();
+  feed(`${game.powers[key].name} bound to the sentinel.`);
+  setToast(`Starting with ${game.powers[key].name}. Hold the wall!`, "good");
+  updateUi();
+}
+
+function drawStartScreen() {
+  const g = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+  g.addColorStop(0, "#12161f");
+  g.addColorStop(1, "#0b0e16");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.fillStyle = "rgba(242, 185, 72, 0.07)";
+  ctx.fillRect(0, 0, WIDTH, 48);
+  ctx.fillStyle = "rgba(255, 70, 60, 0.07)";
+  ctx.fillRect(0, HEIGHT - 48, WIDTH, 48);
+
+  ctx.fillStyle = "#ffd285";
+  ctx.font = "bold 42px Trebuchet MS";
+  ctx.textAlign = "center";
+  ctx.fillText("DAWNFORGE DEFENSE", WIDTH / 2, 105);
+
+  ctx.fillStyle = "#7a8fa8";
+  ctx.font = "15px Trebuchet MS";
+  ctx.fillText("Choose your starting element", WIDTH / 2, 140);
+
+  const elements = [
+    { key: "arc",   name: "Arc Bolt", color: "#d6ecff", desc: "Fast precise bolts",    note: "Single-target pressure"  },
+    { key: "fire",  name: "Fire",     color: "#ff8a52", desc: "Explosive area blasts", note: "Area + burn clusters"     },
+    { key: "earth", name: "Earth",    color: "#c49a5a", desc: "Heavy slowing shots",   note: "Impact + crowd control"   },
+    { key: "water", name: "Water",    color: "#65b9ff", desc: "Burst + wall healing",  note: "Sustain + area damage"    },
+    { key: "wind",  name: "Wind",     color: "#bdeeff", desc: "Pushing gust lanes",    note: "Push + damage over time"  },
+  ];
+
+  const boxW = 154;
+  const boxH = 138;
+  const gap = 12;
+  const totalW = elements.length * boxW + (elements.length - 1) * gap;
+  const bx0 = (WIDTH - totalW) / 2;
+  const by0 = 180;
+
+  startScreenBoxes = [];
+
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i];
+    const bx = bx0 + i * (boxW + gap);
+    const by = by0;
+    startScreenBoxes.push({ key: el.key, x: bx, y: by, w: boxW, h: boxH });
+
+    const hovered =
+      input.mouseX >= bx && input.mouseX <= bx + boxW &&
+      input.mouseY >= by && input.mouseY <= by + boxH;
+
+    ctx.fillStyle = hovered ? "#242c3f" : "#181f2e";
+    ctx.fillRect(bx, by, boxW, boxH);
+
+    ctx.strokeStyle = hovered ? el.color : "rgba(255,255,255,0.08)";
+    ctx.lineWidth = hovered ? 2 : 1;
+    ctx.strokeRect(bx, by, boxW, boxH);
+
+    ctx.fillStyle = el.color;
+    ctx.fillRect(bx, by, boxW, 4);
+
+    ctx.fillStyle = el.color;
+    ctx.font = "bold 16px Trebuchet MS";
+    ctx.textAlign = "center";
+    ctx.fillText(el.name, bx + boxW / 2, by + 32);
+
+    ctx.fillStyle = "#cdd9ee";
+    ctx.font = "12px Trebuchet MS";
+    ctx.fillText(el.desc, bx + boxW / 2, by + 56);
+
+    ctx.fillStyle = "#7a8fa8";
+    ctx.font = "11px Trebuchet MS";
+    ctx.fillText(el.note, bx + boxW / 2, by + 76);
+
+    ctx.fillStyle = hovered ? "#ffd285" : "#806e38";
+    ctx.font = "bold 12px Trebuchet MS";
+    ctx.fillText("\u25B6 Click to Start", bx + boxW / 2, by + 114);
+  }
+
+  if (game.meta.bestWave > 0 || game.meta.totalEssence > 0) {
+    ctx.fillStyle = "#3d4f66";
+    ctx.font = "12px Trebuchet MS";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      `Best Wave: ${game.meta.bestWave}   |   Total Essence: ${game.meta.totalEssence}`,
+      WIDTH / 2,
+      HEIGHT - 24
+    );
+  }
+
+  ctx.textAlign = "left";
 }
 
 function openLevelUpDraft() {
@@ -1140,6 +1321,10 @@ function updateUi() {
 }
 
 function render() {
+  if (game.mode === "hub") {
+    drawStartScreen();
+    return;
+  }
   drawBackground();
   drawXpHud();
   drawWall();
