@@ -99,13 +99,20 @@ const game = {
 setupInput();
 setupUi();
 applyWindowMode();
+resetOverlayToFeed();
+feed("Choose an element on the canvas to begin.");
 updateUi();
-startGame();          // auto-prompt element selection on page load
 requestAnimationFrame(loop);
 
 function setupUi() {
   ui.startBtn.textContent = "Pick Starting Element";
-  ui.startBtn.onclick = () => startGame();
+  ui.startBtn.onclick = () => {
+    hideDefeatModal();
+    input.mouseDown = false;
+    game.mode = "hub";
+    feed("Choose an element on the canvas to begin.");
+    updateUi();
+  };
   if (ui.restartBtn) ui.restartBtn.onclick = () => {
     hideDefeatModal();
     input.mouseDown = false;
