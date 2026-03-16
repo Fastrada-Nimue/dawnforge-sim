@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dawnforge Roguelite Prototype</title>
+  <style>
+    :root {
+      --bg0: #0f1115;
+      --bg1: #171b22;
+      --bg2: #202633;
+      --ink: #e8ecf3;
+      --muted: #9aa6b6;
+      --accent: #f2b948;
+      --danger: #e86a6a;
+      --good: #7ed985;
+      --line: #334056;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 15% 15%, #252d3d 0%, var(--bg0) 48%, #0a0c10 100%);
+      color: var(--ink);
+      font-family: "Trebuchet MS", "Lucida Sans Unicode", "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+    .app {
+      width: min(1030px, 95vw);
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 12px;
+      align-items: start;
+    }
+    .arena-wrap {
+      position: relative;
+      border: 1px solid var(--line);
+      background: linear-gradient(170deg, #121722, #0f1219);
+      border-radius: 14px;
+      padding: 10px;
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
+    }
+    .arena-wrap:fullscreen,
+    .arena-wrap:-webkit-full-screen {
+      width: 100vw;
+      height: 100vh;
+      max-width: none;
+      border: none;
+      border-radius: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      background: #0b1018;
+    }
+    .arena-tools {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .arena-mini-btn {
+      border: 1px solid #5b6f8f;
+      background: #1f2940;
+      color: #c9ddff;
+      border-radius: 6px;
+      font-size: 11px;
+      padding: 6px 9px;
+      cursor: pointer;
+    }
+    .arena-icon-btn {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      font-size: 16px;
+      line-height: 1;
+      display: inline-grid;
+      place-items: center;
+    }
+    canvas {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #0b0f15;
+      border-radius: 10px;
+      display: block;
+      cursor: crosshair;
+    }
+    .arena-wrap:fullscreen canvas,
+    .arena-wrap:-webkit-full-screen canvas {
+      flex: 1 1 auto;
+      width: 100%;
+      height: auto;
+      max-height: calc(100vh - 170px);
+      aspect-ratio: auto;
+      object-fit: contain;
+    }
+    .overlay {
+      margin-top: 10px;
+      min-height: 72px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(20, 25, 35, 0.95);
+      padding: 10px;
+    }
+    .arena-wrap:fullscreen .overlay,
+    .arena-wrap:-webkit-full-screen .overlay {
+      flex: 0 0 auto;
+    }
+    .defeat-modal {
+      position: absolute;
+      inset: 48px 18px 102px 18px;
+      border: 1px solid rgba(112, 143, 191, 0.45);
+      border-radius: 14px;
+      background: rgba(11, 15, 23, 0.94);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      padding: 14px;
+      z-index: 3;
+      display: none;
+      overflow-y: auto;
+    }
+    .defeat-modal.visible {
+      display: block;
+    }
+    .defeat-modal h3 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .overlay h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #1a2230;
+      color: var(--ink);
+      padding: 8px;
+      font-size: 12px;
+      line-height: 1.35;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+    .card:hover { transform: translateY(-1px); border-color: var(--accent); }
+    .side {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: linear-gradient(180deg, var(--bg1), #111621);
+      box-shadow: 0 16px 50px rgba(0, 0, 0, 0.35);
+    }
+    .title {
+      margin: 0 0 8px;
+      font-size: 17px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--bg2);
+      padding: 8px;
+      font-size: 12px;
+    }
+    .stat b { display: block; color: var(--muted); margin-bottom: 3px; font-size: 10px; text-transform: uppercase; }
+    .controls, .meta {
+      border-top: 1px dashed var(--line);
+      margin-top: 10px;
+      padding-top: 10px;
+    }
+    .controls p { margin: 4px 0; color: var(--muted); font-size: 12px; }
+    .btn {
+      width: 100%;
+      border: 1px solid #6b5324;
+      background: linear-gradient(180deg, #2f2616, #20190f);
+      color: #ffd98e;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .btn:hover { filter: brightness(1.15); }
+    .meta-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #1a2230;
+      padding: 7px;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .meta-line span { padding-right: 8px; }
+    .mini {
+      border: 1px solid #5b6f8f;
+      background: #1f2940;
+      color: #c9ddff;
+      border-radius: 6px;
+      font-size: 11px;
+      padding: 4px 6px;
+      cursor: pointer;
+    }
+    .pick-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .pick {
+      border: 1px solid #4c5f7d;
+      background: #1a2438;
+      color: #dbe9ff;
+      border-radius: 7px;
+      font-size: 11px;
+      padding: 7px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .pick.active {
+      border-color: var(--accent);
+      color: #ffe8b1;
+      background: #2a2012;
+    }
+    .legend {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 2px 0 6px;
+    }
+    .slider-row {
+      margin-bottom: 8px;
+    }
+    .slider-row label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #c7d3e4;
+      margin-bottom: 2px;
+    }
+    .slider-row input[type="range"] {
+      width: 100%;
+      accent-color: #90a9d3;
+    }
+    .codex-list {
+      display: grid;
+      gap: 6px;
+      max-height: 185px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .codex-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #172033;
+      padding: 7px;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .codex-item b {
+      color: #dfebff;
+      font-size: 12px;
+    }
+    .toast {
+      margin-top: 8px;
+      min-height: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .danger { color: var(--danger); }
+    .good { color: var(--good); }
+    body.arena-expanded {
+      display: block;
+      overflow: hidden;
+    }
+    body.popout-window {
+      display: block;
+      overflow: hidden;
+      background: #0b1018;
+    }
+    body.arena-expanded .app {
+      width: 100vw;
+      max-width: none;
+      min-height: 100vh;
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+    body.popout-window .app {
+      width: 100vw;
+      max-width: none;
+      min-height: 100vh;
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+    body.arena-expanded .side {
+      display: none;
+    }
+    body.popout-window .side {
+      display: none;
+    }
+    body.arena-expanded .arena-wrap {
+      width: 100vw;
+      min-height: 100vh;
+      border: none;
+      border-radius: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: none;
+      background: #0b1018;
+    }
+    body.popout-window .arena-wrap {
+      width: 100vw;
+      min-height: 100vh;
+      border: none;
+      border-radius: 0;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: none;
+      background: #0b1018;
+    }
+    body.arena-expanded canvas {
+      flex: 1 1 auto;
+      width: 100%;
+      height: auto;
+      max-height: calc(100vh - 170px);
+      aspect-ratio: auto;
+      object-fit: contain;
+    }
+    body.popout-window canvas {
+      flex: 1 1 auto;
+      width: 100%;
+      height: auto;
+      max-height: calc(100vh - 170px);
+      aspect-ratio: auto;
+      object-fit: contain;
+    }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="arena-wrap">
+      <div class="arena-tools">
+        <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
+        <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
+        <button id="restart-btn" class="arena-mini-btn">Restart Run</button>
+      </div>
+      <canvas id="game" width="960" height="540" aria-label="game canvas"></canvas>
+      <div id="defeat-modal" class="defeat-modal" aria-live="polite">
+        <h3 id="defeat-modal-title">Wall Breached</h3>
+        <div id="defeat-modal-cards" class="cards"></div>
+      </div>
+      <div class="overlay">
+        <h3 id="overlay-title">Run Feed</h3>
+        <div id="overlay-cards" class="cards"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <h1 class="title">Dawnforge Core</h1>
+      <div class="stat-grid">
+        <div class="stat"><b>Phase</b><span id="phase">Hub</span></div>
+        <div class="stat"><b>Room</b><span id="room">0 / 0</span></div>
+        <div class="stat"><b>HP</b><span id="hp">0 / 0</span></div>
+        <div class="stat"><b>Damage</b><span id="dmg">0</span></div>
+        <div class="stat"><b>Weapon</b><span id="weapon">-</span></div>
+        <div class="stat"><b>Biome</b><span id="biome">-</span></div>
+        <div class="stat"><b>Modifier</b><span id="modifier">-</span></div>
+        <div class="stat"><b>Character</b><span id="character">-</span></div>
+        <div class="stat"><b>Shards (Run)</b><span id="run-shards">0</span></div>
+        <div class="stat"><b>Shards (Meta)</b><span id="meta-shards">0</span></div>
+      </div>
+
+      <button id="start-btn" class="btn">Start New Run</button>
+
+      <section class="meta">
+        <h3 class="title" style="font-size:13px;margin:0 0 8px;">Characters</h3>
+        <p class="legend">Unlock once, then select before starting a run.</p>
+        <div id="character-picks" class="pick-row"></div>
+      </section>
+
+      <section class="meta">
+        <h3 class="title" style="font-size:13px;margin:0 0 8px;">Meta Upgrades</h3>
+        <div class="meta-line">
+          <span>Vital Core (+15 max HP / tier)</span>
+          <button id="buy-hp" class="mini">Buy</button>
+        </div>
+        <div class="meta-line">
+          <span>Edge Temper (+12% damage / tier)</span>
+          <button id="buy-dmg" class="mini">Buy</button>
+        </div>
+        <div class="meta-line">
+          <span>Stride Gear (+8% speed / tier)</span>
+          <button id="buy-spd" class="mini">Buy</button>
+        </div>
+        <div class="meta-line">
+          <span>Focus Coil (+7% fire rate / tier)</span>
+          <button id="buy-rate" class="mini">Buy</button>
+        </div>
+      </section>
+
+      <section class="meta">
+        <h3 class="title" style="font-size:13px;margin:0 0 8px;">Talent Tree</h3>
+        <div class="meta-line">
+          <span>Execution (+10% crit chance)</span>
+          <button id="buy-tal-crit" class="mini">Buy</button>
+        </div>
+        <div class="meta-line">
+          <span>Aegis Weave (+18 starting shield)</span>
+          <button id="buy-tal-shield" class="mini">Buy</button>
+        </div>
+        <div class="meta-line">
+          <span>Scavenger (+20% shard gain)</span>
+          <button id="buy-tal-scav" class="mini">Buy</button>
+        </div>
+      </section>
+
+      <section class="meta">
+        <h3 class="title" style="font-size:13px;margin:0 0 8px;">Drop Table</h3>
+        <p class="legend">Tune rarity drop chances for reward weapons.</p>
+        <div class="slider-row">
+          <label>Common <span id="drop-common-val">48%</span></label>
+          <input id="drop-common" type="range" min="0" max="100" value="48" />
+        </div>
+        <div class="slider-row">
+          <label>Uncommon <span id="drop-uncommon-val">27%</span></label>
+          <input id="drop-uncommon" type="range" min="0" max="100" value="27" />
+        </div>
+        <div class="slider-row">
+          <label>Rare <span id="drop-rare-val">15%</span></label>
+          <input id="drop-rare" type="range" min="0" max="100" value="15" />
+        </div>
+        <div class="slider-row">
+          <label>Epic <span id="drop-epic-val">8%</span></label>
+          <input id="drop-epic" type="range" min="0" max="100" value="8" />
+        </div>
+        <div class="slider-row">
+          <label>Legendary <span id="drop-legendary-val">2%</span></label>
+          <input id="drop-legendary" type="range" min="0" max="100" value="2" />
+        </div>
+        <button id="drop-reset" class="mini" style="width:100%;margin-top:4px;">Reset Defaults</button>
+      </section>
+
+      <section class="meta">
+        <h3 class="title" style="font-size:13px;margin:0 0 8px;">Weapon Codex</h3>
+        <div id="codex-list" class="codex-list"></div>
+      </section>
+
+      <section class="controls">
+        <h3 class="title" style="font-size:13px;margin:0 0 8px;">Controls</h3>
+        <p>Hero is stationary behind the wall</p>
+        <p>Aim with mouse, click to cast selected power</p>
+        <p>Press 1 for Arc Bolt (always available)</p>
+        <p>Elemental powers unlock from XP levels: 2 Fire, 4 Earth, 6 Water, 8 Wind</p>
+        <p>Press 2-5 for unlocked elements, 6 for Magma after fusion</p>
+      </section>
+
+      <div id="toast" class="toast">Build complete. Start a run.</div>
+    </aside>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
