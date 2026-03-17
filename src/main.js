@@ -84,7 +84,7 @@ const input = {
 let startScreenBoxes = [];
 let powerBarBoxes = [];
 
-const powerOrder = ["fire", "earth", "water", "wind"];
+const powerOrder = ["fire", "earth", "water", "wind", "nature"];
 const basePowerOrder = ["arc", ...powerOrder];
 
 // Elemental combo definitions — priority order matters; first entry wins on overlapping skills.
@@ -96,6 +96,11 @@ const COMBO_DEFS = [
   { key: "mist",      a: "fire",  b: "water", minLevel: 3 },
   { key: "storm",     a: "water", b: "wind",  minLevel: 3 },
   { key: "quicksand", a: "earth", b: "water", minLevel: 3 },
+  { key: "overgrowth", a: "arc",    b: "nature", minLevel: 3 },
+  { key: "wildfire",   a: "fire",   b: "nature", minLevel: 3 },
+  { key: "dustbloom",  a: "earth",  b: "nature", minLevel: 3 },
+  { key: "bloomtide",  a: "water",  b: "nature", minLevel: 3 },
+  { key: "pollenstorm", a: "wind",  b: "nature", minLevel: 3 },
 ];
 
 // Triple fusions take priority over pair fusions.
@@ -104,28 +109,43 @@ const TRIPLE_COMBO_DEFS = [
   { key: "sandglass", a: "fire",  b: "earth", c: "wind",  minLevel: 3 },
   { key: "mudflow",  a: "fire",  b: "earth", c: "water", minLevel: 3 },
   { key: "blizzard", a: "earth", b: "water", c: "wind",  minLevel: 3 },
+  { key: "thornforge", a: "fire", b: "earth", c: "nature", minLevel: 3 },
+  { key: "canopy", a: "earth", b: "water", c: "nature", minLevel: 3 },
+  { key: "briarstorm", a: "water", b: "wind", c: "nature", minLevel: 3 },
+  { key: "sunbloom", a: "fire", b: "wind", c: "nature", minLevel: 3 },
 ];
 
-const QUAD_COMBO_DEF = { key: "cataclysm", a: "fire", b: "earth", c: "water", d: "wind", minLevel: 3 };
+const APEX_COMBO_DEFS = [
+  { key: "cataclysm", a: "fire", b: "earth", c: "water", d: "wind", minLevel: 3 },
+  { key: "worldroot", a: "earth", b: "water", c: "wind", d: "nature", minLevel: 3 },
+];
+
+function getApexDef(key) {
+  return APEX_COMBO_DEFS.find((def) => def.key === key) || null;
+}
 
 function getActiveFusionState() {
   const consumed = new Set();
   const activeComboKeys = [];
   const sourcesByKey = {};
 
-  const qa = game.powers && game.powers[QUAD_COMBO_DEF.a];
-  const qb = game.powers && game.powers[QUAD_COMBO_DEF.b];
-  const qc = game.powers && game.powers[QUAD_COMBO_DEF.c];
-  const qd = game.powers && game.powers[QUAD_COMBO_DEF.d];
-  if (game.apexFusionUnlocked && qa && qb && qc && qd && qa.unlocked && qb.unlocked && qc.unlocked && qd.unlocked &&
-      qa.level >= QUAD_COMBO_DEF.minLevel && qb.level >= QUAD_COMBO_DEF.minLevel &&
-      qc.level >= QUAD_COMBO_DEF.minLevel && qd.level >= QUAD_COMBO_DEF.minLevel) {
-    activeComboKeys.push(QUAD_COMBO_DEF.key);
-    sourcesByKey[QUAD_COMBO_DEF.key] = [QUAD_COMBO_DEF.a, QUAD_COMBO_DEF.b, QUAD_COMBO_DEF.c, QUAD_COMBO_DEF.d];
-    consumed.add(QUAD_COMBO_DEF.a);
-    consumed.add(QUAD_COMBO_DEF.b);
-    consumed.add(QUAD_COMBO_DEF.c);
-    consumed.add(QUAD_COMBO_DEF.d);
+  for (const def of APEX_COMBO_DEFS) {
+    const unlocked = game.apexFusionUnlocked && game.apexFusionUnlocked[def.key];
+    const pa = game.powers && game.powers[def.a];
+    const pb = game.powers && game.powers[def.b];
+    const pc = game.powers && game.powers[def.c];
+    const pd = game.powers && game.powers[def.d];
+    if (!unlocked) continue;
+    if (consumed.has(def.a) || consumed.has(def.b) || consumed.has(def.c) || consumed.has(def.d)) continue;
+    if (pa && pb && pc && pd && pa.unlocked && pb.unlocked && pc.unlocked && pd.unlocked &&
+        pa.level >= def.minLevel && pb.level >= def.minLevel && pc.level >= def.minLevel && pd.level >= def.minLevel) {
+      activeComboKeys.push(def.key);
+      sourcesByKey[def.key] = [def.a, def.b, def.c, def.d];
+      consumed.add(def.a);
+      consumed.add(def.b);
+      consumed.add(def.c);
+      consumed.add(def.d);
+    }
   }
 
   for (const def of TRIPLE_COMBO_DEFS) {
@@ -166,24 +186,34 @@ function getActiveFusionState() {
   return { consumed, activeComboKeys, sourcesByKey };
 }
 
-function getApexConvergenceSources(fusion) {
+function getApexConvergenceOptions(fusion) {
   const srcMap = (fusion && fusion.sourcesByKey) || {};
   const pairKeys = Object.keys(srcMap).filter((k) => {
     const src = srcMap[k] || [];
     return src.length === 2;
   });
 
-  for (let i = 0; i < pairKeys.length; i++) {
-    for (let j = i + 1; j < pairKeys.length; j++) {
-      const a = srcMap[pairKeys[i]] || [];
-      const b = srcMap[pairKeys[j]] || [];
-      const union = new Set([...a, ...b]);
-      if (union.size !== 4) continue;
-      const ok = [QUAD_COMBO_DEF.a, QUAD_COMBO_DEF.b, QUAD_COMBO_DEF.c, QUAD_COMBO_DEF.d].every((k) => union.has(k));
-      if (ok) return [...union];
+  const out = [];
+
+  for (const def of APEX_COMBO_DEFS) {
+    if (game.apexFusionUnlocked && game.apexFusionUnlocked[def.key]) continue;
+    for (let i = 0; i < pairKeys.length; i++) {
+      for (let j = i + 1; j < pairKeys.length; j++) {
+        const a = srcMap[pairKeys[i]] || [];
+        const b = srcMap[pairKeys[j]] || [];
+        const union = new Set([...a, ...b]);
+        if (union.size !== 4) continue;
+        const ok = [def.a, def.b, def.c, def.d].every((k) => union.has(k));
+        if (ok) {
+          out.push({ def, sources: [...union] });
+          i = pairKeys.length;
+          break;
+        }
+      }
     }
   }
-  return null;
+
+  return out;
 }
 
 const game = {
@@ -220,7 +250,7 @@ const game = {
   retryingBossWave: null,
   targetStartWave: null, // For jumping to any wave (regular or boss)
   selectedCastKey: null,
-  apexFusionUnlocked: false,
+  apexFusionUnlocked: { cataclysm: false, worldroot: false },
   screenShake: 0,
   screenShakeMag: 0,
   castPulses: [],
@@ -263,7 +293,7 @@ function setupUi() {
 }
 
 function openStartingElementOverlay() {
-  const choices = ["arc", "fire", "earth", "water", "wind"].map((key) => ({
+  const choices = ["arc", "fire", "earth", "water", "wind", "nature"].map((key) => ({
     key,
     name: `Start with ${capitalize(key === "arc" ? "arc bolt" : key)}`,
     desc: getStartingPowerDesc(key),
@@ -432,7 +462,7 @@ function startGame() {
   game.xpToNext = getXpForNextLevel(game.level);
   game.time = 0;
   game.selectedCastKey = null;
-  game.apexFusionUnlocked = false;
+  game.apexFusionUnlocked = { cataclysm: false, worldroot: false };
   game.screenShake = 0;
   game.screenShakeMag = 0;
 
@@ -585,7 +615,7 @@ function update(dt) {
   updateCastPulses(dt);
   updateAmbientMotes(dt);
 
-  for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "plasma", "riptide", "quicksand", "monsoon", "sandglass", "mudflow", "blizzard", "cataclysm"]) {
+  for (const key of ["arc", "fire", "earth", "water", "wind", "nature", "magma", "mist", "storm", "chain", "plasma", "riptide", "quicksand", "overgrowth", "wildfire", "dustbloom", "bloomtide", "pollenstorm", "monsoon", "sandglass", "mudflow", "blizzard", "thornforge", "canopy", "briarstorm", "sunbloom", "cataclysm", "worldroot"]) {
     if (!game.powers[key]) continue;
     game.powers[key].timer = Math.max(0, game.powers[key].timer - dt);
   }
@@ -871,6 +901,27 @@ function updateZones(dt) {
       }
     }
 
+    if (z.type === "briar") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          e.snare = Math.max(e.snare || 0, z.snare);
+        }
+      }
+      z.pulseTimer = (z.pulseTimer || 0) - dt;
+      if (z.pulseTimer <= 0) {
+        z.pulseTimer += z.pulseCd || 0.48;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.7 + e.r) {
+            e.hp -= z.pulseDamage || z.dps * 0.45;
+            e.snare = Math.max(e.snare || 0, z.snare + 0.08);
+          }
+        }
+        for (let i = 0; i < 4; i++) spawnSpark(z.x, z.y, "#a6e087", 0.9);
+      }
+    }
+
     if (z.type === "lava") {
       for (const e of game.enemies) {
         if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
@@ -1011,6 +1062,7 @@ function getCappedCastTimer(powerKey, baseCd) {
     earth: 1.8,
     water: 1.7,
     wind: 1.55,
+    nature: 1.7,
     magma: 2.25,
     mist: 1.75,
     storm: 1.85,
@@ -1018,11 +1070,21 @@ function getCappedCastTimer(powerKey, baseCd) {
     plasma: 1.7,
     riptide: 1.75,
     quicksand: 2.0,
+    overgrowth: 1.85,
+    wildfire: 2.0,
+    dustbloom: 2.05,
+    bloomtide: 1.9,
+    pollenstorm: 1.95,
     monsoon: 2.25,
     sandglass: 2.35,
     mudflow: 2.4,
     blizzard: 2.3,
+    thornforge: 2.3,
+    canopy: 2.25,
+    briarstorm: 2.25,
+    sunbloom: 2.2,
     cataclysm: 2.8,
+    worldroot: 2.75,
   };
   const maxCd = maxByPower[powerKey] || 1.8;
   return Math.max(0.16, Math.min(maxCd, baseCd * game.cooldownMul));
@@ -1031,29 +1093,51 @@ function getCappedCastTimer(powerKey, baseCd) {
 function tryCastPower(key, tx, ty, angleOffset = 0) {
   const aimed = getOffsetTarget(tx, ty, angleOffset);
 
-  if (key === "cataclysm") {
+  const apexDef = getApexDef(key);
+  if (apexDef) {
     const cp = game.powers[key];
     if (!cp || cp.timer > 0) return false;
     cp.timer = getCappedCastTimer(key, cp.cd);
-    const lv = ["fire", "earth", "water", "wind"].reduce((sum, k) => sum + ((game.powers[k] && game.powers[k].level) || 1), 0) / 4;
+    const lv = [apexDef.a, apexDef.b, apexDef.c, apexDef.d].reduce((sum, k) => sum + ((game.powers[k] && game.powers[k].level) || 1), 0) / 4;
     if (game.zones.length >= MAX_ZONES) game.zones.shift();
-    game.zones.push({
-      type: "apex",
-      variant: "cataclysm",
-      x: aimed.x,
-      y: aimed.y,
-      r: 96 + lv * 12,
-      dps: (30 + lv * 7) * game.globalDamageMul,
-      pulseCd: 0.32,
-      pulseTimer: 0.32,
-      pulseDamage: (24 + lv * 6.2) * game.globalDamageMul,
-      stun: 0.48 + lv * 0.05,
-      slow: 0.58,
-      burn: 1.05 + lv * 0.08,
-      life: 2.8,
-    });
-    spawnCastPulse(aimed.x, aimed.y, "rgba(233, 185, 255, 0.95)", 124, 0.44);
-    triggerScreenShake(0.18, 4.6);
+    if (key === "cataclysm") {
+      game.zones.push({
+        type: "apex",
+        variant: "cataclysm",
+        x: aimed.x,
+        y: aimed.y,
+        r: 96 + lv * 12,
+        dps: (30 + lv * 7) * game.globalDamageMul,
+        pulseCd: 0.32,
+        pulseTimer: 0.32,
+        pulseDamage: (24 + lv * 6.2) * game.globalDamageMul,
+        stun: 0.48 + lv * 0.05,
+        slow: 0.58,
+        burn: 1.05 + lv * 0.08,
+        life: 2.8,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(233, 185, 255, 0.95)", 124, 0.44);
+      triggerScreenShake(0.18, 4.6);
+    } else if (key === "worldroot") {
+      game.zones.push({
+        type: "apex",
+        variant: "worldroot",
+        x: aimed.x,
+        y: aimed.y,
+        r: 92 + lv * 12,
+        dps: (24 + lv * 6.2) * game.globalDamageMul,
+        pulseCd: 0.34,
+        pulseTimer: 0.34,
+        pulseDamage: (20 + lv * 5.6) * game.globalDamageMul,
+        slow: 0.72,
+        snare: 0.7 + lv * 0.06,
+        healPulse: 3 + lv * 0.8,
+        pull: 46 + lv * 5,
+        life: 2.95,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(210, 255, 186, 0.94)", 118, 0.44);
+      triggerScreenShake(0.16, 4.1);
+    }
     return true;
   }
 
@@ -1133,6 +1217,71 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       });
       spawnCastPulse(aimed.x, aimed.y, "rgba(197, 236, 255, 0.9)", 92, 0.36);
       triggerScreenShake(0.1, 2.2);
+    } else if (key === "thornforge") {
+      game.zones.push({
+        type: "triad",
+        variant: "thornforge",
+        x: aimed.x, y: aimed.y,
+        r: 82 + lAvg * 10,
+        dps: (24 + lAvg * 5.8) * game.globalDamageMul,
+        burn: 0.8 + lAvg * 0.08,
+        snare: 0.95 + lAvg * 0.06,
+        pulseCd: 0.42,
+        pulseTimer: 0.42,
+        pulseDamage: (18 + lAvg * 4.8) * game.globalDamageMul,
+        life: 2.35,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(255, 188, 142, 0.88)", 92, 0.36);
+      triggerScreenShake(0.1, 2.2);
+    } else if (key === "canopy") {
+      game.zones.push({
+        type: "triad",
+        variant: "canopy",
+        x: aimed.x, y: aimed.y,
+        r: 88 + lAvg * 10,
+        dps: (20 + lAvg * 5.2) * game.globalDamageMul,
+        slow: 0.62,
+        snare: 0.86 + lAvg * 0.06,
+        pulseCd: 0.38,
+        pulseTimer: 0.38,
+        pulseDamage: (14 + lAvg * 4.3) * game.globalDamageMul,
+        healPulse: 2.8 + lAvg * 0.75,
+        life: 2.4,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(178, 240, 204, 0.88)", 94, 0.36);
+      triggerScreenShake(0.09, 2.05);
+    } else if (key === "briarstorm") {
+      game.zones.push({
+        type: "triad",
+        variant: "briarstorm",
+        x: aimed.x, y: aimed.y,
+        r: 86 + lAvg * 10,
+        dps: (21 + lAvg * 5.4) * game.globalDamageMul,
+        slow: 0.7,
+        push: 48 + lAvg * 6,
+        strikeCd: 0.32,
+        strikeTimer: 0.32,
+        strikeDamage: (16 + lAvg * 4.6) * game.globalDamageMul,
+        life: 2.25,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(215, 245, 168, 0.88)", 94, 0.36);
+      triggerScreenShake(0.09, 2.1);
+    } else if (key === "sunbloom") {
+      game.zones.push({
+        type: "triad",
+        variant: "sunbloom",
+        x: aimed.x, y: aimed.y,
+        r: 84 + lAvg * 10,
+        dps: (23 + lAvg * 5.6) * game.globalDamageMul,
+        burn: 0.72 + lAvg * 0.07,
+        slow: 0.55,
+        burstCd: 0.4,
+        burstTimer: 0.4,
+        burstDamage: (18 + lAvg * 4.5) * game.globalDamageMul,
+        life: 2.25,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(255, 226, 146, 0.88)", 92, 0.36);
+      triggerScreenShake(0.09, 2.1);
     }
     return true;
   }
@@ -1239,6 +1388,83 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         life: 2.4,
       });
       spawnCastPulse(aimed.x, aimed.y, "rgba(223, 188, 124, 0.8)", 80, 0.32);
+    } else if (key === "overgrowth") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "overgrowth",
+        x: aimed.x, y: aimed.y,
+        r: 72 + lAvg * 8,
+        dps: (15 + lAvg * 4) * game.globalDamageMul,
+        linkCd: 0.28,
+        linkTimer: 0.28,
+        linkDamage: (18 + lAvg * 4.8) * game.globalDamageMul,
+        snare: 0.68 + lAvg * 0.05,
+        links: [],
+        linkVisual: 0,
+        maxJumps: Math.min(6, 3 + Math.floor(lAvg / 3)),
+        life: 1.95,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(178, 240, 166, 0.82)", 84, 0.32);
+    } else if (key === "wildfire") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "wildfire",
+        x: aimed.x, y: aimed.y,
+        r: 68 + lAvg * 8,
+        dps: (24 + lAvg * 5.8) * game.globalDamageMul,
+        burn: 0.9 + lAvg * 0.08,
+        pulseCd: 0.44,
+        pulseTimer: 0.44,
+        pulseDamage: (17 + lAvg * 4.4) * game.globalDamageMul,
+        life: 2.1,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(255, 175, 112, 0.84)", 82, 0.32);
+    } else if (key === "dustbloom") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "dustbloom",
+        x: aimed.x, y: aimed.y,
+        r: 66 + lAvg * 8,
+        dps: (18 + lAvg * 4.5) * game.globalDamageMul,
+        slow: 0.58,
+        snare: 0.85 + lAvg * 0.06,
+        crushCd: 0.56,
+        crushTimer: 0.56,
+        crushDamage: (14 + lAvg * 4.1) * game.globalDamageMul,
+        life: 2.25,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(224, 208, 138, 0.82)", 82, 0.32);
+    } else if (key === "bloomtide") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "bloomtide",
+        x: aimed.x, y: aimed.y,
+        r: 72 + lAvg * 8,
+        dps: (18 + lAvg * 4.6) * game.globalDamageMul,
+        slow: 0.62,
+        snare: 0.72 + lAvg * 0.05,
+        pulseCd: 0.38,
+        pulseTimer: 0.38,
+        pulseDamage: (13 + lAvg * 4) * game.globalDamageMul,
+        healPulse: 2.4 + lAvg * 0.7,
+        life: 2.05,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(176, 235, 198, 0.84)", 84, 0.32);
+    } else if (key === "pollenstorm") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "pollenstorm",
+        x: aimed.x, y: aimed.y,
+        r: 74 + lAvg * 8,
+        dps: (19 + lAvg * 4.7) * game.globalDamageMul,
+        slow: 0.68,
+        pull: 28 + lAvg * 4,
+        strikeCd: 0.34,
+        strikeTimer: 0.34,
+        strikeDamage: (15 + lAvg * 4.2) * game.globalDamageMul,
+        life: 2.0,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(232, 250, 166, 0.84)", 84, 0.32);
     }
     return true;
   }
@@ -1328,6 +1554,25 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
     return true;
   }
 
+  if (key === "nature") {
+    if (game.zones.length >= MAX_ZONES) game.zones.shift();
+    game.zones.push({
+      type: "briar",
+      x: aimed.x,
+      y: aimed.y,
+      r: (52 + p.level * 8) * p.radiusMul,
+      dps: (18 + p.level * 7) * game.globalDamageMul * p.damageMul,
+      slow: 0.5,
+      snare: 0.82 + p.snareBonus,
+      pulseCd: 0.48,
+      pulseTimer: 0.48,
+      pulseDamage: (12 + p.level * 4.2) * game.globalDamageMul * p.damageMul,
+      life: 1.55 * p.durationMul,
+    });
+    spawnCastPulse(aimed.x, aimed.y, "rgba(178, 236, 156, 0.78)", Math.max(46, (52 + p.level * 8) * p.radiusMul * 0.9), 0.28);
+    return true;
+  }
+
   if (key === "magma") {
     if (game.zones.length >= MAX_ZONES) game.zones.shift();
     game.zones.push({
@@ -1398,6 +1643,7 @@ function getStartingPowerDesc(key) {
   if (key === "earth") return "Heavy stone shots that slow threats before wall contact.";
   if (key === "water") return "Burst damage with wall healing on every cast.";
   if (key === "wind") return "A piercing gust lane that damages and pushes enemies back.";
+  if (key === "nature") return "Briar patches that root and punish enemies standing inside.";
   return "Unlock this power.";
 }
 
@@ -1415,6 +1661,7 @@ function createInitialPowers() {
     earth:     { level: 1, cd: 1.4,  timer: 0, color: "#b7925a", name: "Earth",    unlocked: false, damageMul: 1.22, slowBonus: 0.15, sizeMul: 1.15 },
     water:     { level: 1, cd: 1.1,  timer: 0, color: "#65b9ff", name: "Water",    unlocked: false, radiusMul: 1.18, healMul: 1.18, damageMul: 1.18 },
     wind:      { level: 1, cd: 0.95, timer: 0, color: "#bdeeff", name: "Wind",     unlocked: false, widthMul: 1.18, pushMul: 1.18, durationMul: 1.18 },
+    nature:    { level: 1, cd: 1.18, timer: 0, color: "#8fd47b", name: "Nature",   unlocked: false, radiusMul: 1.12, snareBonus: 0.18, damageMul: 1.14, durationMul: 1.15 },
     magma:     { level: 0, cd: 2.2,  timer: 0, color: "#ff533d", name: "Magma",    unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
     chain:     { level: 0, cd: 0.62, timer: 0, color: "#b885ff", name: "Chain Arc" },
     plasma:    { level: 0, cd: 1.45, timer: 0, color: "#ff7fa6", name: "Plasma"    },
@@ -1422,11 +1669,21 @@ function createInitialPowers() {
     mist:      { level: 0, cd: 1.55, timer: 0, color: "#aaddcc", name: "Mist"      },
     storm:     { level: 0, cd: 1.75, timer: 0, color: "#88bbff", name: "Storm"     },
     quicksand: { level: 0, cd: 1.9,  timer: 0, color: "#c8a868", name: "Quicksand" },
+    overgrowth:{ level: 0, cd: 1.58, timer: 0, color: "#9fe39a", name: "Overgrowth" },
+    wildfire:  { level: 0, cd: 1.82, timer: 0, color: "#ff9d66", name: "Wildfire"  },
+    dustbloom: { level: 0, cd: 1.95, timer: 0, color: "#c6b276", name: "Dustbloom" },
+    bloomtide: { level: 0, cd: 1.72, timer: 0, color: "#98e0b2", name: "Bloomtide" },
+    pollenstorm: { level: 0, cd: 1.78, timer: 0, color: "#d9f19a", name: "Pollenstorm" },
     monsoon:   { level: 0, cd: 2.05, timer: 0, color: "#7cd7ff", name: "Monsoon"   },
     sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
     mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
     blizzard:  { level: 0, cd: 2.1,  timer: 0, color: "#b8ecff", name: "Blizzard"  },
+    thornforge:{ level: 0, cd: 2.15, timer: 0, color: "#d2aa7b", name: "Thornforge" },
+    canopy:    { level: 0, cd: 2.1,  timer: 0, color: "#8fdab8", name: "Canopy"    },
+    briarstorm:{ level: 0, cd: 2.1,  timer: 0, color: "#bdeaa0", name: "Briarstorm" },
+    sunbloom:  { level: 0, cd: 2.05, timer: 0, color: "#ffd98a", name: "Sunbloom"  },
     cataclysm: { level: 0, cd: 2.6,  timer: 0, color: "#f3d2ff", name: "Cataclysm" },
+    worldroot: { level: 0, cd: 2.55, timer: 0, color: "#c8f2b8", name: "Worldroot" },
   };
 }
 
@@ -1576,7 +1833,7 @@ function startGameWithElement(key) {
   game.xpToNext = getXpForNextLevel(0);
   game.time = 0;
   game.selectedCastKey = key;
-  game.apexFusionUnlocked = false;
+  game.apexFusionUnlocked = { cataclysm: false, worldroot: false };
   game.screenShake = 0;
   game.screenShakeMag = 0;
 
@@ -1645,11 +1902,12 @@ function drawStartScreen() {
     { key: "earth", name: "Earth",    color: "#c49a5a", desc: "Heavy slowing shots",   note: "Impact + crowd control"   },
     { key: "water", name: "Water",    color: "#65b9ff", desc: "Burst + wall healing",  note: "Sustain + area damage"    },
     { key: "wind",  name: "Wind",     color: "#bdeeff", desc: "Pushing gust lanes",    note: "Push + damage over time"  },
+    { key: "nature",name: "Nature",   color: "#8fd47b", desc: "Briar fields and roots", note: "Snare + zone control"   },
   ];
 
-  const boxW = 154;
+  const boxW = elements.length > 5 ? 142 : 154;
   const boxH = 138;
-  const gap = 12;
+  const gap = elements.length > 5 ? 8 : 12;
   const totalW = elements.length * boxW + (elements.length - 1) * gap;
   const bx0 = (WIDTH - totalW) / 2;
   const by0 = 180;
@@ -1770,6 +2028,7 @@ function inferElementKeyFromChoice(choice) {
   if (text.indexOf("earth") !== -1 || text.indexOf("boulder") !== -1 || text.indexOf("stone") !== -1 || text.indexOf("quagmire") !== -1) return "earth";
   if (text.indexOf("water") !== -1 || text.indexOf("flood") !== -1 || text.indexOf("spray") !== -1) return "water";
   if (text.indexOf("wind") !== -1 || text.indexOf("gale") !== -1 || text.indexOf("backdraft") !== -1 || text.indexOf("tailwind") !== -1) return "wind";
+  if (text.indexOf("nature") !== -1 || text.indexOf("briar") !== -1 || text.indexOf("seed") !== -1 || text.indexOf("grove") !== -1 || text.indexOf("root") !== -1) return "nature";
   if (text.indexOf("arc bolt") !== -1 || text.indexOf("arc overcharge") !== -1 || text.indexOf("forked arc") !== -1 || text.indexOf("awaken arc") !== -1) return "arc";
 
   return null;
@@ -2154,6 +2413,51 @@ function addElementUpgradeChoices(pool, key) {
     });
   }
 
+  if (key === "nature") {
+    push({
+      name: "Widened Briars",
+      desc: "Nature patch radius +24%",
+      apply: () => {
+        power.radiusMul *= 1.24;
+        feed("Nature patches cover more ground.");
+      },
+    });
+    push({
+      name: "Griproot",
+      desc: "Nature root strength +0.18s",
+      apply: () => {
+        power.snareBonus += 0.18;
+        feed("Nature roots hold enemies longer.");
+      },
+    });
+    push({
+      name: "Bramble Edge",
+      desc: "Nature damage +24%",
+      apply: () => {
+        power.damageMul *= 1.24;
+        feed("Nature thorns cut deeper.");
+      },
+    });
+    push({
+      name: "Deep Grove",
+      desc: "Nature duration +24%, cast speed -10%",
+      apply: () => {
+        power.durationMul *= 1.24;
+        power.cd = Math.min(1.95, power.cd * 1.1);
+        feed("Nature patches linger longer with a slower cadence.");
+      },
+    });
+    push({
+      name: "Seed Volley",
+      desc: "Nature cast speed +18%, radius -14%",
+      apply: () => {
+        power.cd = Math.max(0.34, power.cd * 0.82);
+        power.radiusMul *= 0.86;
+        feed("Nature casts faster with tighter placement.");
+      },
+    });
+  }
+
   if (key === "magma") {
     push({
       name: "Volcanic Spread",
@@ -2279,23 +2583,24 @@ function generateUpgradeChoices() {
 
   const out = pickWeightedUnique(pool, 4);
 
-  const apexSources = getApexConvergenceSources(fusion);
-  const canConvergeToApex = !game.apexFusionUnlocked && !!apexSources;
+  const apexOptions = getApexConvergenceOptions(fusion);
+  const apexOption = apexOptions[0] || null;
+  const canConvergeToApex = !!apexOption;
   if (canConvergeToApex) {
     out[0] = {
-      name: "Converge Active Synergies",
-      desc: "Fuse your two dual synergies into Cataclysm (4-element apex fusion).",
+      name: `Converge into ${game.powers[apexOption.def.key].name}`,
+      desc: `Fuse active dual synergies into ${game.powers[apexOption.def.key].name} (${apexOption.def.a}+${apexOption.def.b}+${apexOption.def.c}+${apexOption.def.d}).`,
       apply: () => {
-        game.apexFusionUnlocked = true;
-        for (const k of [QUAD_COMBO_DEF.a, QUAD_COMBO_DEF.b, QUAD_COMBO_DEF.c, QUAD_COMBO_DEF.d]) {
+        game.apexFusionUnlocked[apexOption.def.key] = true;
+        for (const k of [apexOption.def.a, apexOption.def.b, apexOption.def.c, apexOption.def.d]) {
           if (game.powers[k]) {
             game.powers[k].unlocked = true;
-            game.powers[k].level = Math.max(game.powers[k].level, QUAD_COMBO_DEF.minLevel);
+            game.powers[k].level = Math.max(game.powers[k].level, apexOption.def.minLevel);
           }
         }
-        game.selectedCastKey = QUAD_COMBO_DEF.key;
-        feed("Active synergies converged into Cataclysm.");
-        setToast("Cataclysm unlocked.", "good");
+        game.selectedCastKey = apexOption.def.key;
+        feed(`Active synergies converged into ${game.powers[apexOption.def.key].name}.`);
+        setToast(`${game.powers[apexOption.def.key].name} unlocked.`, "good");
       },
     };
   }
@@ -2485,6 +2790,118 @@ function updateZones(dt) {
       }
     }
 
+    if (z.type === "overgrowth") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.snare = Math.max(e.snare || 0, z.snare);
+        }
+      }
+
+      z.linkVisual = Math.max(0, (z.linkVisual || 0) - dt);
+      z.linkTimer = (z.linkTimer || 0) - dt;
+      if (z.linkTimer <= 0) {
+        z.linkTimer += z.linkCd || 0.28;
+        const inRange = game.enemies
+          .filter((e) => Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r)
+          .sort((a, b) => Math.hypot(a.x - z.x, a.y - z.y) - Math.hypot(b.x - z.x, b.y - z.y));
+        z.links = [];
+        if (inRange.length >= 2) {
+          const maxLinks = Math.min(inRange.length - 1, z.maxJumps || 4);
+          for (let i = 0; i < maxLinks; i++) {
+            const a = inRange[i];
+            const b = inRange[i + 1];
+            b.hp -= z.linkDamage;
+            b.snare = Math.max(b.snare || 0, z.snare * 0.9);
+            z.links.push([a.x, a.y, b.x, b.y]);
+            for (let j = 0; j < 2; j++) spawnSpark(b.x, b.y, "#baf59e", 0.85);
+          }
+          z.linkVisual = 0.16;
+        }
+      }
+    }
+
+    if (z.type === "wildfire") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.burn = Math.max(e.burn, z.burn);
+          e.snare = Math.max(e.snare || 0, 0.35);
+        }
+      }
+      z.pulseTimer = (z.pulseTimer || 0) - dt;
+      if (z.pulseTimer <= 0) {
+        z.pulseTimer += z.pulseCd || 0.44;
+        explodeAt(z.x, z.y, z.r * 0.52, z.pulseDamage || z.dps * 0.45);
+        for (let i = 0; i < 5; i++) spawnSpark(z.x, z.y, "#ff9e62", 1.05);
+      }
+    }
+
+    if (z.type === "dustbloom") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          e.snare = Math.max(e.snare || 0, z.snare);
+        }
+      }
+      z.crushTimer = (z.crushTimer || 0) - dt;
+      if (z.crushTimer <= 0) {
+        z.crushTimer += z.crushCd || 0.56;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.58 + e.r) {
+            e.hp -= z.crushDamage || z.dps * 0.55;
+            e.snare = Math.max(e.snare || 0, z.snare + 0.1);
+          }
+        }
+        for (let i = 0; i < 4; i++) spawnSpark(z.x, z.y, "#d8c27a", 0.85);
+      }
+    }
+
+    if (z.type === "bloomtide") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          e.snare = Math.max(e.snare || 0, z.snare);
+        }
+      }
+      z.pulseTimer = (z.pulseTimer || 0) - dt;
+      if (z.pulseTimer <= 0) {
+        z.pulseTimer += z.pulseCd || 0.38;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.68 + e.r) {
+            e.hp -= z.pulseDamage || z.dps * 0.45;
+            e.snare = Math.max(e.snare || 0, z.snare + 0.08);
+          }
+        }
+        if (game.wall) game.wall.hp = Math.min(game.wall.maxHp, game.wall.hp + (z.healPulse || 2));
+        for (let i = 0; i < 4; i++) spawnSpark(z.x, z.y, "#99efb8", 0.9);
+      }
+    }
+
+    if (z.type === "pollenstorm") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          const dx = z.x - e.x;
+          const dy = z.y - e.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          e.x += (dx / dist) * (z.pull || 28) * dt;
+          e.y += (dy / dist) * (z.pull || 28) * dt;
+        }
+      }
+      z.strikeTimer = (z.strikeTimer || 0) - dt;
+      if (z.strikeTimer <= 0) {
+        z.strikeTimer += z.strikeCd || 0.34;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.72 + e.r) e.hp -= z.strikeDamage || z.dps * 0.5;
+        }
+        for (let i = 0; i < 5; i++) spawnSpark(z.x, z.y, "#dff39c", 0.95);
+      }
+    }
+
     if (z.type === "chainField") {
       for (const e of game.enemies) {
         if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
@@ -2623,6 +3040,70 @@ function updateZones(dt) {
           }
           for (let i = 0; i < 7; i++) spawnSpark(z.x, z.y, "#d2f5ff", 1.1);
         }
+      } else if (z.variant === "thornforge") {
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+            e.hp -= z.dps * dt;
+            e.burn = Math.max(e.burn, z.burn);
+            e.snare = Math.max(e.snare || 0, z.snare);
+          }
+        }
+        z.pulseTimer -= dt;
+        if (z.pulseTimer <= 0) {
+          z.pulseTimer += z.pulseCd;
+          explodeAt(z.x, z.y, z.r * 0.6, z.pulseDamage);
+          for (let i = 0; i < 6; i++) spawnSpark(z.x, z.y, "#efbf7d", 1.05);
+        }
+      } else if (z.variant === "canopy") {
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+            e.hp -= z.dps * dt;
+            e.slow = Math.max(e.slow, z.slow);
+            e.snare = Math.max(e.snare || 0, z.snare);
+          }
+        }
+        z.pulseTimer -= dt;
+        if (z.pulseTimer <= 0) {
+          z.pulseTimer += z.pulseCd;
+          for (const e of game.enemies) {
+            if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.74 + e.r) e.hp -= z.pulseDamage;
+          }
+          if (game.wall) game.wall.hp = Math.min(game.wall.maxHp, game.wall.hp + z.healPulse);
+          for (let i = 0; i < 6; i++) spawnSpark(z.x, z.y, "#a6eabf", 1.0);
+        }
+      } else if (z.variant === "briarstorm") {
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+            e.hp -= z.dps * dt;
+            e.slow = Math.max(e.slow, z.slow);
+            e.y -= z.push * dt;
+          }
+        }
+        z.strikeTimer -= dt;
+        if (z.strikeTimer <= 0) {
+          z.strikeTimer += z.strikeCd;
+          for (const e of game.enemies) {
+            if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.72 + e.r) {
+              e.hp -= z.strikeDamage;
+              e.snare = Math.max(e.snare || 0, 0.58);
+            }
+          }
+          for (let i = 0; i < 6; i++) spawnSpark(z.x, z.y, "#d9f39c", 1.0);
+        }
+      } else if (z.variant === "sunbloom") {
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+            e.hp -= z.dps * dt;
+            e.burn = Math.max(e.burn, z.burn);
+            e.slow = Math.max(e.slow, z.slow);
+          }
+        }
+        z.burstTimer -= dt;
+        if (z.burstTimer <= 0) {
+          z.burstTimer += z.burstCd;
+          explodeAt(z.x, z.y, z.r * 0.62, z.burstDamage);
+          for (let i = 0; i < 6; i++) spawnSpark(z.x, z.y, "#ffe493", 1.0);
+        }
       }
     }
 
@@ -2646,6 +3127,34 @@ function updateZones(dt) {
         }
         explodeAt(z.x, z.y, z.r * 0.72, z.pulseDamage * 0.6);
         for (let i = 0; i < 10; i++) spawnSpark(z.x, z.y, "#e3b8ff", 1.45);
+      }
+    }
+
+    if (z.type === "apex" && z.variant === "worldroot") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          e.snare = Math.max(e.snare || 0, z.snare);
+          const dx = z.x - e.x;
+          const dy = z.y - e.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          e.x += (dx / dist) * z.pull * dt;
+          e.y += (dy / dist) * z.pull * dt;
+        }
+      }
+
+      z.pulseTimer -= dt;
+      if (z.pulseTimer <= 0) {
+        z.pulseTimer += z.pulseCd;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.8 + e.r) {
+            e.hp -= z.pulseDamage;
+            e.snare = Math.max(e.snare || 0, z.snare + 0.12);
+          }
+        }
+        if (game.wall) game.wall.hp = Math.min(game.wall.maxHp, game.wall.hp + z.healPulse);
+        for (let i = 0; i < 10; i++) spawnSpark(z.x, z.y, "#c7f5b7", 1.3);
       }
     }
   }
@@ -3109,8 +3618,8 @@ function drawXpHud() {
 
 function getNextPowerHint() {
   if (!game.powers || getUnlockedBasePowers().length === 0) return "Pick a starting power to begin.";
-  if (getLockedBasePowers().length > 0) return "Next level: learn a new power or upgrade one in your volley.";
-  return "Next level: strengthen one of your volley powers.";
+  if (getLockedBasePowers().length > 0) return "Next level: learn a new power or take a general boon.";
+  return "Next level: take a general boon for the run.";
 }
 
 function drawWall() {
@@ -3202,6 +3711,16 @@ function drawZones() {
       ctx.fillStyle = "rgba(90, 170, 255, 0.18)";
       circle(z.x, z.y, z.r);
       drawDropletRing(z.x, z.y, z.r, 7);
+    } else if (z.type === "briar") {
+      ctx.fillStyle = "rgba(136, 206, 100, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(190, 245, 150, 0.65)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const a = game.time * 1.2 + i * (Math.PI * 0.4);
+        drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.7, z.y + Math.sin(a) * z.r * 0.7, "rgba(120, 175, 84, 0.55)", 1.1);
+      }
     } else if (z.type === "windLine") {
       drawZigZagLine(z.x1, z.y1, z.x2, z.y2, "rgba(190, 245, 255, 0.82)", 5);
     } else if (z.type === "lava") {
@@ -3323,6 +3842,56 @@ function drawZones() {
       ctx.strokeStyle = "rgba(150, 210, 255, 0.4)";
       ctx.arc(z.x, z.y, z.r * 0.55 + Math.sin(game.time * 4.5) * 2.5, 0, Math.PI * 2);
       ctx.stroke();
+    } else if (z.type === "overgrowth") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(194, 248, 176, 0.56)", "rgba(128, 192, 92, 0)", 0.22);
+      ctx.fillStyle = "rgba(150, 220, 120, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(206, 250, 174, 0.72)";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      if (z.linkVisual > 0 && Array.isArray(z.links)) {
+        for (const link of z.links) {
+          drawZigZagLine(link[0], link[1], link[2], link[3], "rgba(186, 245, 155, 0.88)", 2.2);
+        }
+      }
+    } else if (z.type === "wildfire") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(255, 196, 136, 0.58)", "rgba(255, 116, 72, 0)", 0.22);
+      ctx.fillStyle = "rgba(255, 132, 78, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(255, 212, 146, 0.72)";
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+      for (let i = 0; i < 4; i++) drawFlame(z.x + Math.cos(game.time * 1.7 + i) * z.r * 0.35, z.y + Math.sin(game.time * 1.5 + i) * z.r * 0.35, 5);
+    } else if (z.type === "dustbloom") {
+      drawFusionBloom(z.x, z.y, z.r * 1.2, "rgba(240, 224, 164, 0.5)", "rgba(206, 176, 110, 0)", 0.2);
+      ctx.fillStyle = "rgba(204, 182, 104, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(244, 228, 164, 0.68)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const a = i * (Math.PI * 0.4) + game.time * 0.8;
+        drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.62, z.y + Math.sin(a) * z.r * 0.62, "rgba(156, 138, 82, 0.58)", 1.1);
+      }
+    } else if (z.type === "bloomtide") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(184, 245, 206, 0.56)", "rgba(124, 214, 178, 0)", 0.22);
+      ctx.fillStyle = "rgba(116, 210, 168, 0.16)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(198, 255, 226, 0.72)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      drawDropletRing(z.x, z.y, z.r * 0.9, 6);
+    } else if (z.type === "pollenstorm") {
+      drawFusionBloom(z.x, z.y, z.r * 1.2, "rgba(240, 255, 186, 0.54)", "rgba(206, 230, 120, 0)", 0.22);
+      ctx.fillStyle = "rgba(214, 238, 120, 0.16)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(245, 255, 176, 0.7)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      for (let i = 0; i < 6; i++) {
+        const a = game.time * 2.1 + i * (Math.PI / 3);
+        circle(z.x + Math.cos(a) * z.r * 0.48, z.y + Math.sin(a) * z.r * 0.3, 2.1);
+      }
     } else if (z.type === "triad" && z.variant === "monsoon") {
       drawFusionBloom(z.x, z.y, z.r * 1.24, "rgba(184, 242, 255, 0.54)", "rgba(115, 215, 255, 0)", 0.22);
       const pulse = 0.75 + Math.sin(game.time * 9) * 0.2;
@@ -3366,6 +3935,41 @@ function drawZones() {
         const a = i * (Math.PI / 3) + game.time * 0.7;
         drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.62, z.y + Math.sin(a) * z.r * 0.62, "rgba(215,245,255,0.45)", 1);
       }
+    } else if (z.type === "triad" && z.variant === "thornforge") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(255, 214, 162, 0.56)", "rgba(204, 146, 92, 0)", 0.22);
+      ctx.fillStyle = "rgba(212, 154, 98, 0.2)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(255, 224, 176, 0.7)";
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+      for (let i = 0; i < 6; i++) drawZigZagLine(z.x, z.y, z.x + Math.cos(i * Math.PI / 3) * z.r * 0.68, z.y + Math.sin(i * Math.PI / 3) * z.r * 0.68, "rgba(139, 108, 60, 0.56)", 1.1);
+    } else if (z.type === "triad" && z.variant === "canopy") {
+      drawFusionBloom(z.x, z.y, z.r * 1.24, "rgba(196, 248, 220, 0.58)", "rgba(132, 220, 176, 0)", 0.22);
+      ctx.fillStyle = "rgba(124, 216, 174, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(210, 255, 234, 0.72)";
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const a = game.time * 1.1 + i * (Math.PI * 0.4);
+        circle(z.x + Math.cos(a) * z.r * 0.42, z.y + Math.sin(a) * z.r * 0.22, 2.4);
+      }
+    } else if (z.type === "triad" && z.variant === "briarstorm") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(224, 250, 176, 0.56)", "rgba(180, 220, 98, 0)", 0.22);
+      ctx.fillStyle = "rgba(182, 224, 108, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(244, 255, 188, 0.7)";
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+      drawZigZagLine(z.x - z.r * 0.5, z.y + z.r * 0.18, z.x + z.r * 0.5, z.y - z.r * 0.18, "rgba(230, 255, 172, 0.55)", 1.3);
+    } else if (z.type === "triad" && z.variant === "sunbloom") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(255, 236, 166, 0.58)", "rgba(255, 196, 94, 0)", 0.22);
+      ctx.fillStyle = "rgba(255, 206, 102, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(255, 246, 194, 0.72)";
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+      for (let i = 0; i < 5; i++) drawFlame(z.x + Math.cos(game.time * 1.4 + i) * z.r * 0.3, z.y + Math.sin(game.time * 1.1 + i) * z.r * 0.3, 4.4);
     } else if (z.type === "apex" && z.variant === "cataclysm") {
       drawFusionBloom(z.x, z.y, z.r * 1.26, "rgba(248, 230, 255, 0.64)", "rgba(226, 170, 255, 0)", 0.26);
       const pulse = 0.78 + Math.sin(game.time * 10.5) * 0.2;
@@ -3377,6 +3981,17 @@ function drawZones() {
       for (let i = 0; i < 8; i++) {
         const a = i * (Math.PI / 4) + game.time * 1.1;
         drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.7, z.y + Math.sin(a) * z.r * 0.7, "rgba(255, 228, 255, 0.55)", 1.2);
+      }
+    } else if (z.type === "apex" && z.variant === "worldroot") {
+      drawFusionBloom(z.x, z.y, z.r * 1.26, "rgba(230, 255, 204, 0.64)", "rgba(178, 230, 144, 0)", 0.26);
+      ctx.fillStyle = "rgba(176, 228, 128, 0.18)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(232, 255, 214, 0.82)";
+      ctx.lineWidth = 2.1;
+      ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = i * (Math.PI / 4) + game.time * 0.9;
+        drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.68, z.y + Math.sin(a) * z.r * 0.68, "rgba(214, 255, 180, 0.58)", 1.2);
       }
     }
   }
@@ -3413,12 +4028,22 @@ function getSynergyStateTag(key) {
   if (key === "plasma") return "SURGE";
   if (key === "riptide") return "FLOW";
   if (key === "quicksand") return "PULL+CRUSH";
+  if (key === "overgrowth") return "VINECHAIN";
+  if (key === "wildfire") return "BURN+ROOT";
+  if (key === "dustbloom") return "SNARE+CRUSH";
+  if (key === "bloomtide") return "HEAL+ROOT";
+  if (key === "pollenstorm") return "SWIRL";
   if (key === "magma") return "ERUPT";
   if (key === "monsoon") return "GALE+SURGE";
   if (key === "sandglass") return "SEAR+SNARE";
   if (key === "mudflow") return "PULL+BURST";
   if (key === "blizzard") return "FREEZE+SHOCK";
+  if (key === "thornforge") return "SPIKE+BURN";
+  if (key === "canopy") return "ROOT+HEAL";
+  if (key === "briarstorm") return "GALE+ROOT";
+  if (key === "sunbloom") return "BURST+BURN";
   if (key === "cataclysm") return "APEX";
+  if (key === "worldroot") return "APEX";
   return "";
 }
 
@@ -3429,12 +4054,22 @@ function getSynergyTagColors(key) {
   if (key === "plasma") return { bg: "rgba(255, 130, 188, 0.24)", line: "rgba(255, 192, 225, 0.72)", text: "#ffe0ef" };
   if (key === "riptide") return { bg: "rgba(130, 190, 255, 0.22)", line: "rgba(186, 225, 255, 0.68)", text: "#e3f2ff" };
   if (key === "quicksand") return { bg: "rgba(200, 165, 95, 0.24)", line: "rgba(230, 200, 130, 0.65)", text: "#ffe6b8" };
+  if (key === "overgrowth") return { bg: "rgba(150, 220, 120, 0.24)", line: "rgba(196, 247, 160, 0.68)", text: "#ecffd8" };
+  if (key === "wildfire") return { bg: "rgba(255, 158, 102, 0.24)", line: "rgba(255, 214, 150, 0.7)", text: "#fff0d1" };
+  if (key === "dustbloom") return { bg: "rgba(213, 190, 118, 0.24)", line: "rgba(245, 226, 160, 0.68)", text: "#fff2c8" };
+  if (key === "bloomtide") return { bg: "rgba(124, 224, 174, 0.22)", line: "rgba(185, 250, 220, 0.7)", text: "#e6fff2" };
+  if (key === "pollenstorm") return { bg: "rgba(214, 238, 132, 0.22)", line: "rgba(240, 255, 180, 0.7)", text: "#fbffd8" };
   if (key === "magma") return { bg: "rgba(255, 120, 80, 0.22)", line: "rgba(255, 170, 130, 0.68)", text: "#ffd2bf" };
   if (key === "monsoon") return { bg: "rgba(112, 214, 255, 0.24)", line: "rgba(177, 240, 255, 0.7)", text: "#d2f6ff" };
   if (key === "sandglass") return { bg: "rgba(255, 186, 122, 0.24)", line: "rgba(255, 221, 168, 0.7)", text: "#ffe8c8" };
   if (key === "mudflow") return { bg: "rgba(217, 134, 95, 0.24)", line: "rgba(252, 184, 148, 0.68)", text: "#ffe0d1" };
   if (key === "blizzard") return { bg: "rgba(170, 225, 255, 0.24)", line: "rgba(220, 247, 255, 0.75)", text: "#ecfaff" };
+  if (key === "thornforge") return { bg: "rgba(226, 173, 113, 0.24)", line: "rgba(255, 218, 166, 0.72)", text: "#fff0d7" };
+  if (key === "canopy") return { bg: "rgba(124, 220, 180, 0.24)", line: "rgba(188, 252, 224, 0.72)", text: "#e7fff5" };
+  if (key === "briarstorm") return { bg: "rgba(190, 232, 130, 0.24)", line: "rgba(234, 255, 184, 0.72)", text: "#fbffd9" };
+  if (key === "sunbloom") return { bg: "rgba(255, 214, 120, 0.24)", line: "rgba(255, 240, 182, 0.72)", text: "#fff6d8" };
   if (key === "cataclysm") return { bg: "rgba(222, 168, 255, 0.28)", line: "rgba(244, 218, 255, 0.82)", text: "#fff2ff" };
+  if (key === "worldroot") return { bg: "rgba(186, 238, 160, 0.28)", line: "rgba(228, 255, 214, 0.82)", text: "#f4ffe8" };
   return { bg: "rgba(122, 232, 216, 0.16)", line: "rgba(122, 232, 216, 0.55)", text: "#9ef3e7" };
 }
 
@@ -3476,8 +4111,7 @@ function drawPowerBar() {
       if (!mergeHints[def.c]) mergeHints[def.c] = hint;
     }
   }
-  {
-    const def = QUAD_COMBO_DEF;
+  for (const def of APEX_COMBO_DEFS) {
     const pa = game.powers[def.a], pb = game.powers[def.b], pc = game.powers[def.c], pd = game.powers[def.d];
     if (pa && pb && pc && pd && pa.unlocked && pb.unlocked && pc.unlocked && pd.unlocked &&
         (pa.level < def.minLevel || pb.level < def.minLevel || pc.level < def.minLevel || pd.level < def.minLevel)) {
