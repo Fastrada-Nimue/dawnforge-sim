@@ -101,6 +101,9 @@ const COMBO_DEFS = [
   { key: "dustbloom",  a: "earth",  b: "nature", minLevel: 3 },
   { key: "bloomtide",  a: "water",  b: "nature", minLevel: 3 },
   { key: "pollenstorm", a: "wind",  b: "nature", minLevel: 3 },
+  { key: "lodestone",   a: "arc",   b: "earth",  minLevel: 3 },
+  { key: "sirocco",     a: "fire",  b: "wind",   minLevel: 3 },
+  { key: "dustdevil",   a: "earth", b: "wind",   minLevel: 3 },
 ];
 
 // Triple fusions take priority over pair fusions.
@@ -1075,6 +1078,9 @@ function getCappedCastTimer(powerKey, baseCd) {
     dustbloom: 2.05,
     bloomtide: 1.9,
     pollenstorm: 1.95,
+    lodestone: 1.88,
+    sirocco: 1.92,
+    dustdevil: 1.95,
     monsoon: 2.25,
     sandglass: 2.35,
     mudflow: 2.4,
@@ -1465,6 +1471,55 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         life: 2.0,
       });
       spawnCastPulse(aimed.x, aimed.y, "rgba(232, 250, 166, 0.84)", 84, 0.32);
+    } else if (key === "lodestone") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "lodestone",
+        x: aimed.x, y: aimed.y,
+        r: 64 + lAvg * 8,
+        dps: (16 + lAvg * 4.2) * game.globalDamageMul,
+        pull: 54 + lAvg * 7,
+        slow: 0.52,
+        linkCd: 0.30,
+        linkTimer: 0.30,
+        linkDamage: (20 + lAvg * 5.2) * game.globalDamageMul,
+        links: [],
+        linkVisual: 0,
+        maxJumps: Math.min(5, 3 + Math.floor(lAvg / 3)),
+        life: 2.2,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(172, 136, 225, 0.84)", 82, 0.32);
+    } else if (key === "sirocco") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "sirocco",
+        x: aimed.x, y: aimed.y,
+        r: 70 + lAvg * 8,
+        dps: (26 + lAvg * 5.8) * game.globalDamageMul,
+        burn: 0.88 + lAvg * 0.08,
+        push: 58 + lAvg * 7,
+        burstCd: 0.42,
+        burstTimer: 0.42,
+        burstDamage: (18 + lAvg * 4.8) * game.globalDamageMul,
+        life: 1.95,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(255, 158, 80, 0.84)", 84, 0.32);
+    } else if (key === "dustdevil") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "dustdevil",
+        x: aimed.x, y: aimed.y,
+        r: 68 + lAvg * 8,
+        dps: (18 + lAvg * 4.5) * game.globalDamageMul,
+        slow: 0.55,
+        push: 44 + lAvg * 6,
+        snare: 0.7 + lAvg * 0.05,
+        strikeCd: 0.38,
+        strikeTimer: 0.38,
+        strikeDamage: (15 + lAvg * 4.2) * game.globalDamageMul,
+        life: 2.05,
+      });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(210, 180, 100, 0.82)", 82, 0.32);
     }
     return true;
   }
@@ -1674,6 +1729,9 @@ function createInitialPowers() {
     dustbloom: { level: 0, cd: 1.95, timer: 0, color: "#c6b276", name: "Dustbloom" },
     bloomtide: { level: 0, cd: 1.72, timer: 0, color: "#98e0b2", name: "Bloomtide" },
     pollenstorm: { level: 0, cd: 1.78, timer: 0, color: "#d9f19a", name: "Pollenstorm" },
+    lodestone: { level: 0, cd: 1.65, timer: 0, color: "#9370db", name: "Lodestone"  },
+    sirocco:   { level: 0, cd: 1.72, timer: 0, color: "#ff8938", name: "Sirocco"    },
+    dustdevil: { level: 0, cd: 1.82, timer: 0, color: "#c4a050", name: "Dustdevil"  },
     monsoon:   { level: 0, cd: 2.05, timer: 0, color: "#7cd7ff", name: "Monsoon"   },
     sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
     mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
@@ -1773,11 +1831,13 @@ function generateLevelUpChoices() {
   });
 
   const out = pickWeightedUnique(choices.filter((c) => c.name.indexOf("Learn ") !== 0), 4);
-  // Prepend any unlock cards ahead of general buffs
+  // Limit element unlock pressure so players always see upgrade alternatives.
   const learnCards = choices.filter((c) => c.name.indexOf("Learn ") === 0);
-  const combined = [...learnCards, ...out].slice(0, 4);
-  if (learnCards.length > 0 && !combined.some((c) => c.name.indexOf("Learn ") === 0)) {
-    combined[combined.length - 1] = learnCards[0];
+  const learnCap = Math.min(2, learnCards.length);
+  const selectedLearn = pickUnique(learnCards, learnCap);
+  const combined = [...selectedLearn, ...out].slice(0, 4);
+  if (selectedLearn.length > 0 && !combined.some((c) => c.name.indexOf("Learn ") === 0)) {
+    combined[combined.length - 1] = selectedLearn[0];
   }
   return combined.length ? combined : out;
 }
@@ -2025,11 +2085,11 @@ function inferElementKeyFromChoice(choice) {
 
   if (text.indexOf("magma") !== -1) return "magma";
   if (text.indexOf("fire") !== -1 || text.indexOf("cinder") !== -1 || text.indexOf("ember") !== -1) return "fire";
-  if (text.indexOf("earth") !== -1 || text.indexOf("boulder") !== -1 || text.indexOf("stone") !== -1 || text.indexOf("quagmire") !== -1) return "earth";
+  if (text.indexOf("earth") !== -1 || text.indexOf("boulder") !== -1 || text.indexOf("stone") !== -1 || text.indexOf("quagmire") !== -1 || text.indexOf("dustdevil") !== -1) return "earth";
   if (text.indexOf("water") !== -1 || text.indexOf("flood") !== -1 || text.indexOf("spray") !== -1) return "water";
-  if (text.indexOf("wind") !== -1 || text.indexOf("gale") !== -1 || text.indexOf("backdraft") !== -1 || text.indexOf("tailwind") !== -1) return "wind";
+  if (text.indexOf("wind") !== -1 || text.indexOf("gale") !== -1 || text.indexOf("backdraft") !== -1 || text.indexOf("tailwind") !== -1 || text.indexOf("sirocco") !== -1) return "wind";
   if (text.indexOf("nature") !== -1 || text.indexOf("briar") !== -1 || text.indexOf("seed") !== -1 || text.indexOf("grove") !== -1 || text.indexOf("root") !== -1) return "nature";
-  if (text.indexOf("arc bolt") !== -1 || text.indexOf("arc overcharge") !== -1 || text.indexOf("forked arc") !== -1 || text.indexOf("awaken arc") !== -1) return "arc";
+  if (text.indexOf("arc bolt") !== -1 || text.indexOf("arc overcharge") !== -1 || text.indexOf("forked arc") !== -1 || text.indexOf("awaken arc") !== -1 || text.indexOf("lodestone") !== -1) return "arc";
 
   return null;
 }
@@ -3157,6 +3217,86 @@ function updateZones(dt) {
         for (let i = 0; i < 10; i++) spawnSpark(z.x, z.y, "#c7f5b7", 1.3);
       }
     }
+
+    if (z.type === "lodestone") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          const dx = z.x - e.x;
+          const dy = z.y - e.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          e.x += (dx / dist) * (z.pull || 54) * dt;
+          e.y += (dy / dist) * (z.pull || 54) * dt;
+        }
+      }
+      z.linkVisual = Math.max(0, (z.linkVisual || 0) - dt);
+      z.linkTimer = (z.linkTimer || 0) - dt;
+      if (z.linkTimer <= 0) {
+        z.linkTimer += z.linkCd || 0.30;
+        const inRange = game.enemies
+          .filter((e) => Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r)
+          .sort((a, b) => Math.hypot(a.x - z.x, a.y - z.y) - Math.hypot(b.x - z.x, b.y - z.y));
+        z.links = [];
+        if (inRange.length >= 2) {
+          const maxLinks = Math.min(inRange.length - 1, z.maxJumps || 4);
+          for (let i = 0; i < maxLinks; i++) {
+            const a = inRange[i];
+            const b = inRange[i + 1];
+            b.hp -= z.linkDamage;
+            z.links.push([a.x, a.y, b.x, b.y]);
+            for (let j = 0; j < 3; j++) spawnSpark(b.x, b.y, "#c2a8f8", 0.95);
+          }
+          z.linkVisual = 0.16;
+        }
+      }
+    }
+
+    if (z.type === "sirocco") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.burn = Math.max(e.burn, z.burn);
+          e.y -= z.push * dt;
+        }
+      }
+      z.burstTimer = (z.burstTimer || 0) - dt;
+      if (z.burstTimer <= 0) {
+        z.burstTimer += z.burstCd || 0.42;
+        explodeAt(z.x, z.y, z.r * 0.62, z.burstDamage || z.dps * 0.45);
+        for (let i = 0; i < 6; i++) spawnSpark(z.x, z.y, "#ffb462", 1.1);
+      }
+    }
+
+    if (z.type === "dustdevil") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          e.snare = Math.max(e.snare || 0, z.snare);
+          // Tangential spiral push + upward push
+          const dx = e.x - z.x;
+          const dy = e.y - z.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          const tx = -dy / dist;
+          const ty = dx / dist;
+          e.x += tx * (z.push || 44) * 0.35 * dt;
+          e.y += ty * (z.push || 44) * 0.35 * dt;
+          e.y -= (z.push || 44) * 0.65 * dt;
+        }
+      }
+      z.strikeTimer = (z.strikeTimer || 0) - dt;
+      if (z.strikeTimer <= 0) {
+        z.strikeTimer += z.strikeCd || 0.38;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.72 + e.r) {
+            e.hp -= z.strikeDamage || z.dps * 0.5;
+            e.snare = Math.max(e.snare || 0, z.snare + 0.1);
+          }
+        }
+        for (let i = 0; i < 5; i++) spawnSpark(z.x, z.y, "#dabc7a", 1.0);
+      }
+    }
   }
 
   game.zones = game.zones.filter((z) => z.life > 0);
@@ -3892,6 +4032,83 @@ function drawZones() {
         const a = game.time * 2.1 + i * (Math.PI / 3);
         circle(z.x + Math.cos(a) * z.r * 0.48, z.y + Math.sin(a) * z.r * 0.3, 2.1);
       }
+    } else if (z.type === "lodestone") {
+      // Indigo magnetic field: spinning arcs + chain links — distinct from chain (lavender links) and riptide (blue ripple)
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(188, 158, 255, 0.52)", "rgba(102, 68, 196, 0)", 0.22);
+      const mag = 0.8 + Math.sin(game.time * 9.5) * 0.18;
+      ctx.fillStyle = `rgba(90, 60, 195, ${0.14 * mag})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(186, 152, 255, 0.72)";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      // Three spinning magnetic arc bands
+      for (let i = 0; i < 3; i++) {
+        const a = game.time * 1.6 + i * (Math.PI * 0.667);
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(210, 178, 255, ${0.48 - i * 0.06})`;
+        ctx.lineWidth = 1.3;
+        ctx.arc(z.x, z.y, z.r * (0.36 + i * 0.22), a, a + Math.PI * 1.2);
+        ctx.stroke();
+      }
+      // Electric chain links between targets
+      if (z.linkVisual > 0 && Array.isArray(z.links)) {
+        for (const link of z.links) {
+          drawZigZagLine(link[0], link[1], link[2], link[3], "rgba(224, 200, 255, 0.90)", 2.0);
+        }
+      }
+    } else if (z.type === "sirocco") {
+      // Amber scorching wind: asymmetric flame wisps + upward arrow streams — distinct from mist/wildfire
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(255, 186, 108, 0.56)", "rgba(255, 104, 36, 0)", 0.22);
+      const heat = 0.8 + Math.sin(game.time * 7.2) * 0.14;
+      ctx.fillStyle = `rgba(255, 120, 46, ${0.15 * heat})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(255, 190, 128, 0.68)";
+      ctx.lineWidth = 1.7;
+      ctx.stroke();
+      // Upward wind streamers (push direction) — no full circles, just swept lines
+      for (let i = 0; i < 4; i++) {
+        const xOff = (i - 1.5) * z.r * 0.38;
+        const wavble = Math.sin(game.time * 3.5 + i * 1.4) * 6;
+        drawZigZagLine(
+          z.x + xOff + wavble, z.y + z.r * 0.42,
+          z.x + xOff - wavble, z.y - z.r * 0.78,
+          `rgba(255, 210, 128, ${0.5 + i * 0.04})`, 1.2
+        );
+      }
+      // Fire wisps
+      for (let i = 0; i < 3; i++) {
+        drawFlame(
+          z.x + Math.cos(game.time * 2.0 + i * 2.1) * z.r * 0.34,
+          z.y + Math.sin(game.time * 1.6 + i * 2.1) * z.r * 0.28,
+          4.5
+        );
+      }
+    } else if (z.type === "dustdevil") {
+      // Spinning sand vortex: nested rotating arcs + orbiting dust motes — distinct from quicksand/dustbloom
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(228, 196, 124, 0.5)", "rgba(176, 140, 62, 0)", 0.2);
+      const spin = game.time * 2.8;
+      ctx.fillStyle = "rgba(190, 160, 88, 0.15)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(226, 196, 126, 0.65)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Nested spinning arc rings — the vortex funnel shape
+      for (let ring = 0; ring < 3; ring++) {
+        const rr = z.r * (0.28 + ring * 0.25);
+        const startA = spin + ring * (Math.PI * 0.667);
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(214, 178, 100, ${0.52 - ring * 0.1})`;
+        ctx.lineWidth = 1.6 - ring * 0.3;
+        ctx.arc(z.x, z.y, rr, startA, startA + Math.PI * 1.4);
+        ctx.stroke();
+      }
+      // Orbiting sand/dust particles
+      for (let i = 0; i < 8; i++) {
+        const a = spin * 1.4 + i * (Math.PI / 4);
+        const rr = z.r * (0.5 + 0.1 * Math.sin(game.time * 4.2 + i));
+        ctx.fillStyle = `rgba(212, 176, 102, 0.45)`;
+        circle(z.x + Math.cos(a) * rr, z.y + Math.sin(a) * rr * 0.72, 2.2);
+      }
     } else if (z.type === "triad" && z.variant === "monsoon") {
       drawFusionBloom(z.x, z.y, z.r * 1.24, "rgba(184, 242, 255, 0.54)", "rgba(115, 215, 255, 0)", 0.22);
       const pulse = 0.75 + Math.sin(game.time * 9) * 0.2;
@@ -4044,6 +4261,9 @@ function getSynergyStateTag(key) {
   if (key === "sunbloom") return "BURST+BURN";
   if (key === "cataclysm") return "APEX";
   if (key === "worldroot") return "APEX";
+  if (key === "lodestone") return "PULL+ZAP";
+  if (key === "sirocco") return "SEAR+GUST";
+  if (key === "dustdevil") return "SPIN+SNARE";
   return "";
 }
 
@@ -4070,6 +4290,9 @@ function getSynergyTagColors(key) {
   if (key === "sunbloom") return { bg: "rgba(255, 214, 120, 0.24)", line: "rgba(255, 240, 182, 0.72)", text: "#fff6d8" };
   if (key === "cataclysm") return { bg: "rgba(222, 168, 255, 0.28)", line: "rgba(244, 218, 255, 0.82)", text: "#fff2ff" };
   if (key === "worldroot") return { bg: "rgba(186, 238, 160, 0.28)", line: "rgba(228, 255, 214, 0.82)", text: "#f4ffe8" };
+  if (key === "lodestone") return { bg: "rgba(138, 102, 224, 0.24)", line: "rgba(198, 166, 255, 0.72)", text: "#ede0ff" };
+  if (key === "sirocco") return { bg: "rgba(255, 148, 64, 0.24)", line: "rgba(255, 202, 140, 0.72)", text: "#fff0d0" };
+  if (key === "dustdevil") return { bg: "rgba(196, 166, 82, 0.24)", line: "rgba(230, 202, 132, 0.7)", text: "#fff4d0" };
   return { bg: "rgba(122, 232, 216, 0.16)", line: "rgba(122, 232, 216, 0.55)", text: "#9ef3e7" };
 }
 
