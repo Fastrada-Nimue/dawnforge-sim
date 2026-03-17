@@ -122,6 +122,7 @@ const game = {
   selectedCastKey: null,
   meta: loadMeta(),
 };
+setupInput();
 setupUi();
 applyWindowMode();
 resetOverlayToFeed();
