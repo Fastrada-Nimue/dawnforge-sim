@@ -182,12 +182,16 @@ function openPopoutWindow() {
 }
 
 function setupInput() {
-  canvas.addEventListener("mousemove", (e) => {
+  function updatePointerFromClient(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const sx = canvas.width / rect.width;
     const sy = canvas.height / rect.height;
-    input.mouseX = (e.clientX - rect.left) * sx;
-    input.mouseY = (e.clientY - rect.top) * sy;
+    input.mouseX = (clientX - rect.left) * sx;
+    input.mouseY = (clientY - rect.top) * sy;
+  }
+
+  canvas.addEventListener("mousemove", (e) => {
+    updatePointerFromClient(e.clientX, e.clientY);
     if (game.mode === "hub") {
       const hovered = startScreenBoxes.some(b =>
         input.mouseX >= b.x && input.mouseX <= b.x + b.w &&
@@ -201,6 +205,7 @@ function setupInput() {
 
   canvas.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
+    updatePointerFromClient(e.clientX, e.clientY);
     if (game.mode === "hub") {
       for (const box of startScreenBoxes) {
         if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
@@ -221,6 +226,33 @@ function setupInput() {
   });
 
   canvas.addEventListener("mouseleave", () => {
+    input.mouseDown = false;
+  });
+
+  canvas.addEventListener("touchstart", (e) => {
+    if (!e.touches || e.touches.length === 0) return;
+    const t = e.touches[0];
+    updatePointerFromClient(t.clientX, t.clientY);
+
+    if (game.mode === "hub") {
+      for (const box of startScreenBoxes) {
+        if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
+            input.mouseY >= box.y && input.mouseY <= box.y + box.h) {
+          startGameWithElement(box.key);
+          e.preventDefault();
+          return;
+        }
+      }
+      return;
+    }
+
+    if (game.mode === "running") {
+      input.mouseDown = true;
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener("touchend", () => {
     input.mouseDown = false;
   });
 
