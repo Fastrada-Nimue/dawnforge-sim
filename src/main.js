@@ -30,7 +30,9 @@ const ui = {
 
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
-const MAX_WAVES = 10;
+const MAX_WAVES = 12;
+const BOSS_WAVE_INTERVAL = 6; // Bosses at waves 6, 12, 18, etc. (after every 5 regular levels)
+const BOSS_WARNING_SECONDS = 4;
 const MAX_SPARKS = 900;
 const MAX_PROJECTILES = 700;
 const MAX_ZONES = 220;
@@ -54,6 +56,13 @@ const XP_BY_TYPE = {
   runner: 9,
   brute: 16,
   boss: 60,
+};
+
+const ESSENCE_BY_TYPE = {
+  grunt: 3,
+  runner: 4,
+  brute: 7,
+  boss: 30,
 };
 
 const input = {
@@ -86,6 +95,9 @@ const game = {
   spawnLeft: 0,
   spawnTimer: 0,
   spawnInterval: 0.8,
+  bossPrep: false,
+  bossPrepTimer: 0,
+  bossSpawnedThisWave: false,
   kills: 0,
   runEssence: 0,
   globalDamageMul: 1,
@@ -101,10 +113,13 @@ const game = {
   powers: null,
   magmaUnlocked: false,
   upgradeChoices: [],
+  preferredElements: [],
+  pendingCrystalBonus: null,
+  lastEndSummary: null,
+  retryingBossWave: null,
+  targetStartWave: null, // For jumping to any wave (regular or boss)
   meta: loadMeta(),
 };
-
-setupInput();
 setupUi();
 applyWindowMode();
 resetOverlayToFeed();
@@ -216,6 +231,7 @@ function setupInput() {
 
 function startGame() {
   hideDefeatModal();
+  const carry = consumePendingCrystalBonus();
   game.mode = "upgrade";
   game.wave = 0;
   game.enemies = [];
@@ -224,9 +240,12 @@ function startGame() {
   game.sparks = [];
   game.kills = 0;
   game.runEssence = 0;
-  game.globalDamageMul = 1 + game.meta.defeatUpgrades.damageBoost * 0.1;
-  game.cooldownMul = 1 / (1 + game.meta.defeatUpgrades.castSpeedBoost * 0.08);
+  game.globalDamageMul = (1 + game.meta.defeatUpgrades.damageBoost * 0.1) * (1 + carry.damageBoostPct);
+  game.cooldownMul = (1 / (1 + game.meta.defeatUpgrades.castSpeedBoost * 0.08)) / (1 + carry.castSpeedBoostPct);
   game.magmaUnlocked = false;
+  game.bossPrep = false;
+  game.bossPrepTimer = 0;
+  game.bossSpawnedThisWave = false;
   game.level = 0;
   game.xp = 0;
   game.pendingLevelChoices = 0;
@@ -238,8 +257,8 @@ function startGame() {
     y: HEIGHT - 160,
     w: 380,
     h: 26,
-    maxHp: 1600 + game.meta.defeatUpgrades.wallTech * 120,
-    hp: 1600 + game.meta.defeatUpgrades.wallTech * 120,
+    maxHp: 1600 + game.meta.defeatUpgrades.wallTech * 120 + carry.wallHpBonus,
+    hp: 1600 + game.meta.defeatUpgrades.wallTech * 120 + carry.wallHpBonus,
   };
 
   game.hero = {
@@ -254,11 +273,11 @@ function startGame() {
     earth: { level: 1, cd: 1.4, timer: 0, color: "#b7925a", name: "Earth", unlocked: false, damageMul: 1.22, slowBonus: 0.15, sizeMul: 1.15 },
     water: { level: 1, cd: 1.1, timer: 0, color: "#65b9ff", name: "Water", unlocked: false, radiusMul: 1.18, healMul: 1.18, damageMul: 1.18 },
     wind: { level: 1, cd: 0.95, timer: 0, color: "#bdeeff", name: "Wind", unlocked: false, widthMul: 1.18, pushMul: 1.18, durationMul: 1.18 },
-    magma:     { level: 0, cd: 2.8,  timer: 0, color: "#ff533d", name: "Magma",     unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
-    mist:      { level: 0, cd: 2.0,  timer: 0, color: "#aaddcc", name: "Mist"      },
-    storm:     { level: 0, cd: 2.2,  timer: 0, color: "#88bbff", name: "Storm"     },
+    magma:     { level: 0, cd: 2.2,  timer: 0, color: "#ff533d", name: "Magma",     unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
+    mist:      { level: 0, cd: 1.55, timer: 0, color: "#aaddcc", name: "Mist"      },
+    storm:     { level: 0, cd: 1.75, timer: 0, color: "#88bbff", name: "Storm"     },
     chain:     { level: 0, cd: 0.6,  timer: 0, color: "#b8d8ff", name: "Chain Arc" },
-    quicksand: { level: 0, cd: 2.4,  timer: 0, color: "#c8a868", name: "Quicksand" },
+    quicksand: { level: 0, cd: 1.9,  timer: 0, color: "#c8a868", name: "Quicksand" },
   };
 
   openStartingPowerDraft();
@@ -268,10 +287,26 @@ function startGame() {
 
 function nextWave() {
   game.wave += 1;
+
+  if (game.wave % BOSS_WAVE_INTERVAL === 0) {
+    game.spawnLeft = 0;
+    game.spawnInterval = 0;
+    game.spawnTimer = 0;
+    game.bossPrep = true;
+    game.bossPrepTimer = BOSS_WARNING_SECONDS;
+    game.bossSpawnedThisWave = false;
+    feed(`Wave ${game.wave} is a boss wave. Brace for impact.`);
+    setToast(`Boss incoming in ${BOSS_WARNING_SECONDS}s.`, "danger");
+    return;
+  }
+
   const earlyEase = getEarlyWaveEase();
   game.spawnLeft = Math.max(5, Math.round(6 + game.wave * 3 - earlyEase * 2));
   game.spawnInterval = Math.max(0.28, 1.02 - game.wave * 0.05 + earlyEase * 0.16);
   game.spawnTimer = 0.65 + earlyEase * 0.4;
+  game.bossPrep = false;
+  game.bossPrepTimer = 0;
+  game.bossSpawnedThisWave = false;
   feed(`Wave ${game.wave} begins. Enemies incoming from the north.`);
 }
 
@@ -280,8 +315,45 @@ function getEarlyWaveEase() {
 }
 
 function getEnemyAttackCooldown(enemyType) {
-  const base = enemyType === "brute" ? 1.55 : enemyType === "runner" ? 1.2 : 1.35;
+  const bossTier = Math.max(1, Math.floor(game.wave / BOSS_WAVE_INTERVAL));
+  const base = enemyType === "boss"
+    ? Math.max(1.45, 1.95 - bossTier * 0.16)
+    : enemyType === "brute" ? 1.55 : enemyType === "runner" ? 1.2 : 1.35;
   return Math.max(0.8, base - Math.max(0, game.wave - 4) * 0.05);
+}
+
+function getBossProfileForWave(wave) {
+  const tier = Math.max(1, Math.floor(wave / BOSS_WAVE_INTERVAL));
+  const waveBonus = Math.max(0, wave - BOSS_WAVE_INTERVAL);
+  return {
+    tier,
+    hp: 820 + tier * 420 + waveBonus * 55,
+    speed: 25 + tier * 4 + waveBonus * 0.5,
+    damage: 48 + tier * 18 + waveBonus * 1.6,
+    radius: 31 + tier * 3,
+    color: tier >= 2 ? "#ff5ea9" : "#c264ff",
+  };
+}
+
+function spawnBossEnemy() {
+  const profile = getBossProfileForWave(game.wave);
+  game.enemies.push({
+    type: "boss",
+    x: WIDTH * 0.5,
+    y: -58,
+    r: profile.radius,
+    hp: profile.hp,
+    maxHp: profile.hp,
+    speed: profile.speed,
+    damage: profile.damage,
+    atkCd: 0,
+    color: profile.color,
+    enraged: false,
+    burn: 0, slow: 0, stun: 0, snare: 0,
+  });
+  game.bossSpawnedThisWave = true;
+  for (let i = 0; i < 20; i++) spawnSpark(WIDTH * 0.5, 42 + Math.random() * 48, profile.tier >= 2 ? "#ffb1d2" : "#d9a8ff", 1.8);
+  setToast(`Boss tier ${profile.tier} entered the lane.`, "danger");
 }
 
 function loop(ts) {
@@ -341,7 +413,16 @@ function update(dt) {
     castSelectedPower(input.mouseX, input.mouseY);
   }
 
-  if (game.spawnLeft > 0) {
+  if (game.bossPrep && !game.bossSpawnedThisWave) {
+    game.bossPrepTimer -= dt;
+    if (game.bossPrepTimer <= 0) {
+      game.bossPrep = false;
+      game.bossPrepTimer = 0;
+      spawnBossEnemy();
+    }
+  }
+
+  if (!game.bossPrep && game.spawnLeft > 0) {
     game.spawnTimer -= dt;
     if (game.spawnTimer <= 0) {
       spawnEnemy();
@@ -366,7 +447,7 @@ function update(dt) {
     return;
   }
 
-  if (game.spawnLeft <= 0 && game.enemies.length === 0) {
+  if (!game.bossPrep && game.spawnLeft <= 0 && game.enemies.length === 0) {
     if (game.wave >= MAX_WAVES) {
       endGame(true);
       return;
@@ -434,6 +515,14 @@ function spawnEnemy() {
 
 function updateEnemies(dt) {
   for (const e of game.enemies) {
+    if (e.type === "boss" && !e.enraged && e.maxHp > 0 && e.hp / e.maxHp <= 0.45) {
+      e.enraged = true;
+      e.speed *= 1.16;
+      e.damage *= 1.2;
+      for (let i = 0; i < 12; i++) spawnSpark(e.x, e.y, "#ff9ed0", 1.5);
+      setToast("Boss enraged!", "danger");
+    }
+
     const stunned = e.stun > 0;
     const snared = e.snare > 0;
     const slowMul = stunned ? 0 : snared ? 0.14 : (e.slow > 0 ? 0.50 : 1);
@@ -475,7 +564,9 @@ function updateEnemies(dt) {
   if (killed > 0) {
     game.kills += killed;
     const essenceMul = 1 + game.meta.defeatUpgrades.essenceBoost * 0.1;
-    game.runEssence += killed * 3 * essenceMul;
+    let essenceGain = 0;
+    for (const enemy of defeated) essenceGain += ESSENCE_BY_TYPE[enemy.type] || ESSENCE_BY_TYPE.grunt;
+    game.runEssence += essenceGain * essenceMul;
     let xpGain = 0;
     for (const enemy of defeated) xpGain += XP_BY_TYPE[enemy.type] || XP_BY_TYPE.grunt;
     gainXp(xpGain);
@@ -510,6 +601,39 @@ function updateProjectiles(dt) {
         if (Math.hypot(e.x - p.x, e.y - p.y) < e.r + p.r) {
           e.hp -= p.damage;
           spawnSpark(e.x, e.y, "#d6ecff", 1.1);
+
+          if (p.forks > 0 && game.projectiles.length < MAX_PROJECTILES) {
+            let target = null;
+            let bestDist = p.forkRange || 120;
+            for (const other of game.enemies) {
+              if (other === e || other.hp <= 0) continue;
+              const d = Math.hypot(other.x - e.x, other.y - e.y);
+              if (d < bestDist) {
+                bestDist = d;
+                target = other;
+              }
+            }
+            if (target) {
+              const ang = Math.atan2(target.y - e.y, target.x - e.x);
+              spawnSpark(e.x, e.y, "#bfe7ff", 1.4);
+              spawnSpark(target.x, target.y, "#9fd3ff", 1.2);
+              game.projectiles.push({
+                type: "arcBolt",
+                x: e.x,
+                y: e.y,
+                vx: Math.cos(ang) * 620,
+                vy: Math.sin(ang) * 620,
+                life: 0.28,
+                r: 3,
+                damage: p.damage * (p.forkDamageMul || 0.72),
+                pierce: 0,
+                forks: p.forks - 1,
+                forkRange: p.forkRange,
+                forkDamageMul: p.forkDamageMul,
+              });
+            }
+          }
+
           if (p.pierce > 0) p.pierce -= 1;
           else p.life = 0;
           break;
@@ -633,6 +757,23 @@ function getOffsetTarget(tx, ty, angleOffset) {
   };
 }
 
+function getCappedCastTimer(powerKey, baseCd) {
+  const maxByPower = {
+    arc: 1.05,
+    fire: 1.65,
+    earth: 1.8,
+    water: 1.7,
+    wind: 1.55,
+    magma: 2.25,
+    mist: 1.75,
+    storm: 1.85,
+    chain: 0.9,
+    quicksand: 2.0,
+  };
+  const maxCd = maxByPower[powerKey] || 1.8;
+  return Math.max(0.16, Math.min(maxCd, baseCd * game.cooldownMul));
+}
+
 function tryCastPower(key, tx, ty, angleOffset = 0) {
   const aimed = getOffsetTarget(tx, ty, angleOffset);
 
@@ -641,7 +782,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
   if (comboDef) {
     const cp = game.powers[key];
     if (!cp || cp.timer > 0) return false;
-    cp.timer = cp.cd * game.cooldownMul;
+    cp.timer = getCappedCastTimer(key, cp.cd);
     const la = (game.powers[comboDef.a] && game.powers[comboDef.a].level) || 1;
     const lb = (game.powers[comboDef.b] && game.powers[comboDef.b].level) || 1;
     const lAvg = (la + lb) * 0.5;
@@ -655,6 +796,10 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         dps: (22 + lAvg * 5) * game.globalDamageMul,
         slow: 0.7,
         burn: 0.6 + 0.08 * lAvg,
+        pulseCd: 0.52,
+        pulseTimer: 0.52,
+        pulseDamage: (22 + lAvg * 4.5) * game.globalDamageMul,
+        pulseHeal: 2 + lAvg * 0.7,
         life: 1.9,
       });
     } else if (key === "storm") {
@@ -666,6 +811,9 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         dps: (28 + lAvg * 6) * game.globalDamageMul,
         stun: 0.65 + 0.08 * lAvg,
         slow: 0.75,
+        strikeCd: 0.36,
+        strikeTimer: 0.36,
+        strikeDamage: (18 + lAvg * 5) * game.globalDamageMul,
         life: 1.6,
       });
     } else if (key === "chain") {
@@ -681,6 +829,9 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
           life: 0.75, r: 4,
           damage: (20 + lAvg * 1.8) * game.globalDamageMul,
           pierce: 3,
+          forks: 1,
+          forkRange: 118 + lAvg * 6,
+          forkDamageMul: 0.74,
         });
       }
     } else if (key === "quicksand") {
@@ -692,6 +843,10 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         dps: (14 + lAvg * 3) * game.globalDamageMul,
         snare: 1.2 + 0.1 * lAvg,
         slow: 0.5,
+        pull: 36 + lAvg * 4,
+        crushCd: 0.66,
+        crushTimer: 0.66,
+        crushDamage: (12 + lAvg * 3) * game.globalDamageMul,
         life: 2.4,
       });
     }
@@ -705,7 +860,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
   if (key === "magma" && !game.magmaUnlocked) return false;
   if (p.timer > 0) return false;
 
-  p.timer = p.cd * game.cooldownMul;
+  p.timer = getCappedCastTimer(key, p.cd);
 
   if (key === "arc") {
     const speed = 520;
@@ -790,6 +945,9 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       y: aimed.y,
       r: (74 + p.level * 7) * p.radiusMul,
       dps: (62 + p.level * 16) * game.globalDamageMul * p.dpsMul,
+      pulseCd: 0.78,
+      pulseTimer: 0.78,
+      pulseDamage: (20 + p.level * 6) * game.globalDamageMul * p.blastMul,
       life: 3.6,
     });
     explodeAt(aimed.x, aimed.y, (62 + p.level * 14) * p.radiusMul, (46 + p.level * 14) * p.blastMul);
@@ -831,7 +989,10 @@ function renderChoiceOverlay(title, choices, onPick) {
     const el = document.createElement("button");
     el.className = "card";
     el.innerHTML = `<b>${choice.name}</b><br>${choice.desc}`;
-    el.onclick = () => onPick(choice);
+    el.onclick = () => {
+      rememberPreferredElement(inferElementKeyFromChoice(choice));
+      onPick(choice);
+    };
     ui.overlayCards.appendChild(el);
   }
 }
@@ -884,6 +1045,7 @@ function generateLevelUpChoices() {
     choices.push(makePowerUpgradeChoice(key, `Strengthen one part of your volley.`));
   }
 
+  choices.sort((a, b) => getChoiceDraftWeight(b) - getChoiceDraftWeight(a));
   return choices.slice(0, 4);
 }
 
@@ -906,16 +1068,30 @@ function openStartingPowerDraft() {
 
 function startGameWithElement(key) {
   hideDefeatModal();
-  game.wave = 0;
+  const carry = consumePendingCrystalBonus();
+  game.preferredElements = [key];
+  
+  // Handle target start wave (from progress line or boss retry)
+  if (game.targetStartWave !== null) {
+    game.wave = game.targetStartWave;
+  } else if (game.retryingBossWave && isBossWave(game.retryingBossWave)) {
+    game.wave = game.retryingBossWave - 1;
+  } else {
+    game.wave = 0;
+  }
+  
   game.enemies = [];
   game.projectiles = [];
   game.zones = [];
   game.sparks = [];
   game.kills = 0;
   game.runEssence = 0;
-  game.globalDamageMul = 1 + game.meta.defeatUpgrades.damageBoost * 0.1;
-  game.cooldownMul = 1 / (1 + game.meta.defeatUpgrades.castSpeedBoost * 0.08);
+  game.globalDamageMul = (1 + game.meta.defeatUpgrades.damageBoost * 0.1) * (1 + carry.damageBoostPct);
+  game.cooldownMul = (1 / (1 + game.meta.defeatUpgrades.castSpeedBoost * 0.08)) / (1 + carry.castSpeedBoostPct);
   game.magmaUnlocked = false;
+  game.bossPrep = false;
+  game.bossPrepTimer = 0;
+  game.bossSpawnedThisWave = false;
   game.level = 0;
   game.xp = 0;
   game.pendingLevelChoices = 0;
@@ -927,8 +1103,8 @@ function startGameWithElement(key) {
     y: HEIGHT - 160,
     w: 380,
     h: 26,
-    maxHp: 1600 + game.meta.defeatUpgrades.wallTech * 120,
-    hp: 1600 + game.meta.defeatUpgrades.wallTech * 120,
+    maxHp: 1600 + game.meta.defeatUpgrades.wallTech * 120 + carry.wallHpBonus,
+    hp: 1600 + game.meta.defeatUpgrades.wallTech * 120 + carry.wallHpBonus,
   };
 
   game.hero = {
@@ -943,19 +1119,31 @@ function startGameWithElement(key) {
     earth:     { level: 1, cd: 1.4,  timer: 0, color: "#b7925a", name: "Earth",    unlocked: false, damageMul: 1.22, slowBonus: 0.15, sizeMul: 1.15 },
     water:     { level: 1, cd: 1.1,  timer: 0, color: "#65b9ff", name: "Water",    unlocked: false, radiusMul: 1.18, healMul: 1.18, damageMul: 1.18 },
     wind:      { level: 1, cd: 0.95, timer: 0, color: "#bdeeff", name: "Wind",     unlocked: false, widthMul: 1.18, pushMul: 1.18, durationMul: 1.18 },
-    magma:     { level: 0, cd: 2.8,  timer: 0, color: "#ff533d", name: "Magma",    unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
-    mist:      { level: 0, cd: 2.0,  timer: 0, color: "#aaddcc", name: "Mist"      },
-    storm:     { level: 0, cd: 2.2,  timer: 0, color: "#88bbff", name: "Storm"     },
+    magma:     { level: 0, cd: 2.2,  timer: 0, color: "#ff533d", name: "Magma",    unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
+    mist:      { level: 0, cd: 1.55, timer: 0, color: "#aaddcc", name: "Mist"      },
+    storm:     { level: 0, cd: 1.75, timer: 0, color: "#88bbff", name: "Storm"     },
     chain:     { level: 0, cd: 0.6,  timer: 0, color: "#b8d8ff", name: "Chain Arc" },
-    quicksand: { level: 0, cd: 2.4,  timer: 0, color: "#c8a868", name: "Quicksand" },
+    quicksand: { level: 0, cd: 1.9,  timer: 0, color: "#c8a868", name: "Quicksand" },
   };
 
   unlockPower(key, true);
   game.mode = "running";
   resetOverlayToFeed();
   nextWave();
-  feed(`${game.powers[key].name} bound to the sentinel.`);
-  setToast(`Starting with ${game.powers[key].name}. Hold the wall!`, "good");
+  
+  const retryText = game.retryingBossWave ? ` Retrying Boss Level ${getBossTierFromWave(game.retryingBossWave)}.` : "";
+  feed(`${game.powers[key].name} bound to the sentinel.${retryText}`);
+  if (carry.tier > 0) {
+    setToast(
+      `Starting with ${game.powers[key].name}. Crystal bonus active: +${carry.wallHpBonus} wall HP, +${(carry.damageBoostPct * 100).toFixed(1)}% damage, +${(carry.castSpeedBoostPct * 100).toFixed(1)}% cast speed.`,
+      "good"
+    );
+  } else {
+    setToast(`Starting with ${game.powers[key].name}. Hold the wall!`, "good");
+  }
+  
+  game.retryingBossWave = null; // Reset after use
+  game.targetStartWave = null; // Reset after use
   updateUi();
 }
 
@@ -1076,6 +1264,190 @@ function openUpgradeDraft() {
   });
 }
 
+function getEmptyCrystalBonus() {
+  return {
+    tier: 0,
+    wallHpBonus: 0,
+    damageBoostPct: 0,
+    castSpeedBoostPct: 0,
+  };
+}
+
+function buildCrystalBonusFromRun(crystals) {
+  const tier = Math.min(10, Math.floor(Math.max(0, crystals) / 120));
+  return {
+    tier,
+    wallHpBonus: tier * 24,
+    damageBoostPct: tier * 0.012,
+    castSpeedBoostPct: tier * 0.01,
+  };
+}
+
+function consumePendingCrystalBonus() {
+  if (!game.pendingCrystalBonus) return getEmptyCrystalBonus();
+  const out = game.pendingCrystalBonus;
+  game.pendingCrystalBonus = null;
+  return out;
+}
+
+function inferElementKeyFromChoice(choice) {
+  if (!choice) return null;
+  const text = `${choice.name || ""} ${choice.desc || ""}`.toLowerCase();
+
+  if (text.indexOf("magma") !== -1) return "magma";
+  if (text.indexOf("fire") !== -1 || text.indexOf("cinder") !== -1 || text.indexOf("ember") !== -1) return "fire";
+  if (text.indexOf("earth") !== -1 || text.indexOf("boulder") !== -1 || text.indexOf("stone") !== -1 || text.indexOf("quagmire") !== -1) return "earth";
+  if (text.indexOf("water") !== -1 || text.indexOf("flood") !== -1 || text.indexOf("spray") !== -1) return "water";
+  if (text.indexOf("wind") !== -1 || text.indexOf("gale") !== -1 || text.indexOf("backdraft") !== -1 || text.indexOf("tailwind") !== -1) return "wind";
+  if (text.indexOf("arc bolt") !== -1 || text.indexOf("arc overcharge") !== -1 || text.indexOf("forked arc") !== -1 || text.indexOf("awaken arc") !== -1) return "arc";
+
+  return null;
+}
+
+function rememberPreferredElement(key) {
+  if (!key) return;
+  if (!Array.isArray(game.preferredElements)) game.preferredElements = [];
+
+  game.preferredElements = game.preferredElements.filter((k) => k !== key);
+  game.preferredElements.unshift(key);
+  if (game.preferredElements.length > 3) game.preferredElements.length = 3;
+}
+
+function getElementDraftWeight(key) {
+  if (!key) return 1;
+
+  let weight = 1;
+  const idx = Array.isArray(game.preferredElements) ? game.preferredElements.indexOf(key) : -1;
+  if (idx === 0) weight += 3;
+  else if (idx === 1) weight += 2;
+  else if (idx === 2) weight += 1;
+
+  const p = game.powers && game.powers[key];
+  if (p && p.unlocked) weight += Math.min(2, Math.floor(Math.max(0, p.level - 1) / 2));
+  if (key === "magma" && game.magmaUnlocked) weight += 1;
+
+  return Math.max(1, Math.min(6, weight));
+}
+
+function getChoiceDraftWeight(choice) {
+  const key = inferElementKeyFromChoice(choice);
+  if (!key) return 1;
+  return getElementDraftWeight(key);
+}
+
+// Progression system: waves are grouped as [1-5, boss5], [6-10, boss10], [11-15, boss15], etc.
+function isBossWave(waveNum) {
+  return waveNum > 0 && waveNum % BOSS_WAVE_INTERVAL === 0;
+}
+
+function getBossWaveNumber(bossTier) {
+  // bossTier 1 = wave 5, bossTier 2 = wave 10, bossTier 3 = wave 15
+  return bossTier * BOSS_WAVE_INTERVAL;
+}
+
+function getBossTierFromWave(waveNum) {
+  if (!isBossWave(waveNum)) return 0;
+  return waveNum / BOSS_WAVE_INTERVAL;
+}
+
+function recordLostBoss(bossWave) {
+  if (!isBossWave(bossWave)) return;
+  if (!game.meta.lostBosses.includes(bossWave)) {
+    game.meta.lostBosses.push(bossWave);
+    game.meta.lostBosses.sort((a, b) => a - b);
+    saveMeta(game.meta);
+  }
+}
+
+function getHighestBossAvailableWave() {
+  // Return the highest boss wave the player has reached
+  let highest = 0;
+  for (let tier = 1; tier <= 20; tier++) {
+    const bossWave = getBossWaveNumber(tier);
+    if (bossWave <= game.meta.bestWave) {
+      highest = bossWave;
+    } else {
+      break;
+    }
+  }
+  return highest;
+}
+
+function getProgressionTiers() {
+  // Return array of tiers up to bestWave + 1
+  // Each tier: 5 regular levels + 1 boss level
+  const tiers = [];
+  const maxTier = Math.ceil((game.meta.bestWave + 1) / BOSS_WAVE_INTERVAL);
+  for (let tier = 1; tier <= maxTier; tier++) {
+    const startWave = (tier - 1) * BOSS_WAVE_INTERVAL + 1;
+    const bossWave = tier * BOSS_WAVE_INTERVAL;
+    const regularWaves = [];
+    for (let w = startWave; w < bossWave; w++) {
+      regularWaves.push(w);
+    }
+    const isLost = game.meta.lostBosses.includes(bossWave);
+    const isReached = game.meta.bestWave >= bossWave;
+    tiers.push({
+      tier,
+      startWave,
+      bossWave,
+      regularWaves,
+      isLost,
+      isReached,
+    });
+  }
+  return tiers;
+}
+
+function endGame(victory) {
+  if (game.mode !== "running") return;
+
+  input.mouseDown = false;
+  game.mode = victory ? "victory" : "gameover";
+
+  const crystals = Math.floor(Math.max(0, game.runEssence));
+  const baseReward = victory ? 90 : 45;
+  const waveReward = game.wave * (victory ? 8 : 5);
+  const crystalReward = Math.floor(crystals * (victory ? 1.05 : 0.9));
+  const crystalBonus = Math.floor(Math.sqrt(crystals) * 4);
+  const totalGain = Math.max(0, Math.floor(baseReward + waveReward + crystalReward + crystalBonus));
+
+  game.meta.totalEssence += totalGain;
+  game.meta.bestWave = Math.max(game.meta.bestWave, game.wave);
+
+  // Track if player lost at a boss wave
+  if (!victory && isBossWave(game.wave)) {
+    recordLostBoss(game.wave);
+  }
+
+  const carry = buildCrystalBonusFromRun(crystals);
+  game.pendingCrystalBonus = carry.tier > 0 ? carry : null;
+  game.lastEndSummary = {
+    victory,
+    crystals,
+    baseReward,
+    waveReward,
+    crystalReward,
+    crystalBonus,
+    totalGain,
+    carry,
+  };
+
+  saveMeta(game.meta);
+
+  if (victory) {
+    feed(`Victory. Wave ${game.wave} cleared and ${totalGain} essence secured.`);
+    setToast(`Victory. +${totalGain} essence banked.`, "good");
+  } else {
+    const bossInfo = isBossWave(game.wave) ? " (Boss Level)" : "";
+    feed(`Wall lost at wave ${game.wave}${bossInfo}. ${totalGain} essence salvaged.`);
+    setToast(`Wall breached. +${totalGain} essence salvaged.`, "danger");
+  }
+
+  renderDefeatOverlay(totalGain);
+  updateUi();
+}
+
 function addElementUpgradeChoices(pool, key) {
   const power = game.powers[key];
   if (!power || !power.unlocked) return;
@@ -1095,6 +1467,24 @@ function addElementUpgradeChoices(pool, key) {
       apply: () => {
         power.pierce += 1;
         feed("Arc Bolt now pierces deeper into the wave.");
+      },
+    });
+    pool.push({
+      name: "Capacitor Lattice",
+      desc: "Arc damage +34%, cast speed -9%",
+      apply: () => {
+        power.damageMul *= 1.34;
+        power.cd = Math.min(1.3, power.cd * 1.09);
+        feed("Arc bolts hit harder, but cycle slower.");
+      },
+    });
+    pool.push({
+      name: "Pulse Cycling",
+      desc: "Arc cast speed +18%, damage -12%",
+      apply: () => {
+        power.cd = Math.max(0.18, power.cd * 0.82);
+        power.damageMul *= 0.88;
+        feed("Arc bolts fire faster with reduced impact.");
       },
     });
   }
@@ -1124,6 +1514,24 @@ function addElementUpgradeChoices(pool, key) {
         feed("Burning embers linger longer.");
       },
     });
+    pool.push({
+      name: "Inferno Bloom",
+      desc: "Fire area +42%, cast speed -10%",
+      apply: () => {
+        power.areaMul *= 1.42;
+        power.cd = Math.min(1.9, power.cd * 1.1);
+        feed("Fire blooms wider, but with slower cadence.");
+      },
+    });
+    pool.push({
+      name: "Kindled Rhythm",
+      desc: "Fire cast speed +20%, area -18%",
+      apply: () => {
+        power.cd = Math.max(0.35, power.cd * 0.8);
+        power.areaMul *= 0.82;
+        feed("Fire cadence quickened, blast radius tightened.");
+      },
+    });
   }
 
   if (key === "earth") {
@@ -1149,6 +1557,24 @@ function addElementUpgradeChoices(pool, key) {
       apply: () => {
         power.sizeMul *= 1.2;
         feed("Earth boulders grew in size.");
+      },
+    });
+    pool.push({
+      name: "Seismic Payload",
+      desc: "Earth size +32%, cast speed -10%",
+      apply: () => {
+        power.sizeMul *= 1.32;
+        power.cd = Math.min(2.05, power.cd * 1.1);
+        feed("Earth payload enlarged at a slower firing rhythm.");
+      },
+    });
+    pool.push({
+      name: "Pebble Salvo",
+      desc: "Earth cast speed +18%, size -16%",
+      apply: () => {
+        power.cd = Math.max(0.4, power.cd * 0.82);
+        power.sizeMul *= 0.84;
+        feed("Earth shots fly more often, but smaller.");
       },
     });
   }
@@ -1178,6 +1604,24 @@ function addElementUpgradeChoices(pool, key) {
         feed("Water bursts strike harder.");
       },
     });
+    pool.push({
+      name: "Tidal Reservoir",
+      desc: "Water radius +36%, cast speed -9%",
+      apply: () => {
+        power.radiusMul *= 1.36;
+        power.cd = Math.min(1.85, power.cd * 1.09);
+        feed("Water bursts spread farther with slower recast.");
+      },
+    });
+    pool.push({
+      name: "Jet Weave",
+      desc: "Water cast speed +18%, radius -15%",
+      apply: () => {
+        power.cd = Math.max(0.35, power.cd * 0.82);
+        power.radiusMul *= 0.85;
+        feed("Water pulses quickened, with tighter coverage.");
+      },
+    });
   }
 
   if (key === "wind") {
@@ -1205,6 +1649,24 @@ function addElementUpgradeChoices(pool, key) {
         feed("Wind lines remain active longer.");
       },
     });
+    pool.push({
+      name: "Cyclone Front",
+      desc: "Wind width +34%, cast speed -10%",
+      apply: () => {
+        power.widthMul *= 1.34;
+        power.cd = Math.min(1.78, power.cd * 1.1);
+        feed("Wind fronts widened, but cycle slower.");
+      },
+    });
+    pool.push({
+      name: "Razor Draft",
+      desc: "Wind cast speed +20%, width -18%",
+      apply: () => {
+        power.cd = Math.max(0.3, power.cd * 0.8);
+        power.widthMul *= 0.82;
+        feed("Wind casts faster through narrower lanes.");
+      },
+    });
   }
 
   if (key === "magma") {
@@ -1230,6 +1692,24 @@ function addElementUpgradeChoices(pool, key) {
       apply: () => {
         power.blastMul *= 1.26;
         feed("Magma eruptions hit harder.");
+      },
+    });
+    pool.push({
+      name: "Caldera Field",
+      desc: "Magma radius +34%, cast speed -11%",
+      apply: () => {
+        power.radiusMul *= 1.34;
+        power.cd = Math.min(2.9, power.cd * 1.11);
+        feed("Magma fields expanded with slower cycling.");
+      },
+    });
+    pool.push({
+      name: "Splinter Vent",
+      desc: "Magma cast speed +16%, radius -16%",
+      apply: () => {
+        power.cd = Math.max(1.2, power.cd * 0.84);
+        power.radiusMul *= 0.84;
+        feed("Magma vents trigger faster in smaller pools.");
       },
     });
   }
@@ -1321,7 +1801,7 @@ function generateUpgradeChoices() {
     },
   });
 
-  const out = pickUnique(pool, 4);
+  const out = pickWeightedUnique(pool, 4);
 
   const magmaEligible = game.powers.fire.unlocked && game.powers.earth.unlocked && game.powers.fire.level >= 3 && game.powers.earth.level >= 3 && !game.magmaUnlocked;
   if (magmaEligible) {
@@ -1347,6 +1827,28 @@ function pickUnique(arr, count) {
     const idx = (Math.random() * pool.length) | 0;
     out.push(pool.splice(idx, 1)[0]);
   }
+  return out;
+}
+
+function pickWeightedUnique(arr, count) {
+  const pool = [...arr];
+  const out = [];
+
+  while (out.length < count && pool.length) {
+    let total = 0;
+    for (const item of pool) total += Math.max(1, getChoiceDraftWeight(item));
+
+    let roll = Math.random() * total;
+    let idx = 0;
+    for (; idx < pool.length; idx++) {
+      roll -= Math.max(1, getChoiceDraftWeight(pool[idx]));
+      if (roll <= 0) break;
+    }
+
+    if (idx >= pool.length) idx = pool.length - 1;
+    out.push(pool.splice(idx, 1)[0]);
+  }
+
   return out;
 }
 
@@ -1383,6 +1885,13 @@ function updateZones(dt) {
           e.slow = Math.max(e.slow, 0.6);
         }
       }
+
+      z.pulseTimer = (z.pulseTimer || 0) - dt;
+      if (z.pulseTimer <= 0) {
+        z.pulseTimer += z.pulseCd || 0.78;
+        explodeAt(z.x, z.y, z.r * 0.55, z.pulseDamage || z.dps * 0.25);
+        for (let i = 0; i < 8; i++) spawnSpark(z.x, z.y, "#ff8f62", 1.7);
+      }
     }
 
     // Mist: slow, burn, dps
@@ -1394,6 +1903,19 @@ function updateZones(dt) {
           e.burn = Math.max(e.burn, z.burn);
         }
       }
+
+      z.pulseTimer = (z.pulseTimer || 0) - dt;
+      if (z.pulseTimer <= 0) {
+        z.pulseTimer += z.pulseCd || 0.52;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.62 + e.r) {
+            e.hp -= z.pulseDamage || z.dps * 0.5;
+            e.slow = Math.max(e.slow, z.slow + 0.08);
+          }
+        }
+        if (game.wall) game.wall.hp = Math.min(game.wall.maxHp, game.wall.hp + (z.pulseHeal || 3));
+        for (let i = 0; i < 5; i++) spawnSpark(z.x, z.y, "#9fdcb8", 1.0);
+      }
     }
     // Storm: stun, dps, slow
     if (z.type === "storm") {
@@ -1402,6 +1924,28 @@ function updateZones(dt) {
           e.hp -= z.dps * dt;
           e.slow = Math.max(e.slow, z.slow);
           if (!e.stun || e.stun < z.stun) e.stun = z.stun;
+        }
+      }
+
+      z.strikeTimer = (z.strikeTimer || 0) - dt;
+      if (z.strikeTimer <= 0) {
+        z.strikeTimer += z.strikeCd || 0.36;
+        let target = null;
+        let maxHp = 0;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r && e.hp > maxHp) {
+            maxHp = e.hp;
+            target = e;
+          }
+        }
+        if (target) {
+          target.hp -= z.strikeDamage || z.dps * 0.45;
+          target.stun = Math.max(target.stun || 0, z.stun * 0.7);
+          for (let i = 0; i < 3; i++) {
+            const t = (i + 1) / 4;
+            spawnSpark(z.x + (target.x - z.x) * t, z.y + (target.y - z.y) * t, "#c9e8ff", 0.9);
+          }
+          for (let i = 0; i < 5; i++) spawnSpark(target.x, target.y, "#a8d2ff", 1.2);
         }
       }
     }
@@ -1421,7 +1965,26 @@ function updateZones(dt) {
           e.hp -= z.dps * dt;
           e.slow = Math.max(e.slow, z.slow);
           if (!e.snare || e.snare < z.snare) e.snare = z.snare;
+
+          const dx = z.x - e.x;
+          const dy = z.y - e.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          e.x += (dx / dist) * (z.pull || 36) * dt;
+          e.y += (dy / dist) * (z.pull || 36) * dt;
         }
+      }
+
+      z.crushTimer = (z.crushTimer || 0) - dt;
+      if (z.crushTimer <= 0) {
+        z.crushTimer += z.crushCd || 0.66;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.55 + e.r) {
+            e.hp -= z.crushDamage || z.dps * 0.6;
+            e.snare = Math.max(e.snare || 0, 0.55);
+            spawnSpark(e.x, e.y, "#d8b466", 0.9);
+          }
+        }
+        for (let i = 0; i < 4; i++) spawnSpark(z.x, z.y, "#b8964c", 0.8);
       }
     }
   }
@@ -1447,7 +2010,19 @@ function renderDefeatUpgradeMenu() {
 
 function renderDefeatOverlay(gainOverride) {
   if (!ui.defeatModal || !ui.defeatModalCards || !ui.defeatModalTitle) return;
-  ui.defeatModalTitle.textContent = "Wall Breached";
+  const summaryData = game.lastEndSummary || {
+    victory: false,
+    crystals: Math.floor(Math.max(0, game.runEssence)),
+    baseReward: 45,
+    waveReward: game.wave * 5,
+    crystalReward: Math.floor(game.runEssence),
+    crystalBonus: 0,
+    totalGain: Math.floor(45 + game.runEssence),
+    carry: getEmptyCrystalBonus(),
+  };
+  const isVictory = !!summaryData.victory;
+
+  ui.defeatModalTitle.textContent = isVictory ? "Citadel Holds" : "Wall Breached";
   ui.defeatModalCards.innerHTML = "";
   ui.defeatModal.classList.add("visible");
 
@@ -1455,16 +2030,156 @@ function renderDefeatOverlay(gainOverride) {
   const summary = document.createElement("div");
   summary.className = "card";
   summary.style.cursor = "default";
+  const durationSec = Math.max(1, Math.floor(game.time || 0));
+  const kpm = (game.kills / (durationSec / 60)).toFixed(1);
   summary.innerHTML = `
-    <b>Defense failed.</b><br>
+    <b>${isVictory ? "Defense held." : "Defense failed."}</b><br>
+    Time survived: ${durationSec}s<br>
     Wave reached: ${game.wave}<br>
     Level reached: ${game.level}<br>
-    Kills: ${game.kills}<br>
-    Essence gained: ${Math.floor(gainOverride != null ? gainOverride : (45 + game.runEssence))}<br>
+    Kills: ${game.kills} (${kpm}/min)<br>
+    Crystals gathered: ${summaryData.crystals}<br>
+    Crystal bonus: +${summaryData.crystalBonus} essence<br>
+    Essence gained: ${Math.floor(gainOverride != null ? gainOverride : summaryData.totalGain)}<br>
     Meta essence: ${Math.floor(game.meta.totalEssence)}<br>
-    Essence bonus: ${(essenceMul * 100).toFixed(0)}%
+    Essence bonus: ${(essenceMul * 100).toFixed(0)}%<br>
+    Next run bonus: ${summaryData.carry.tier > 0
+      ? `+${summaryData.carry.wallHpBonus} HP, +${(summaryData.carry.damageBoostPct * 100).toFixed(1)}% damage, +${(summaryData.carry.castSpeedBoostPct * 100).toFixed(1)}% cast speed`
+      : "None"}
   `;
   ui.defeatModalCards.appendChild(summary);
+
+  // Progress line visualization with clickable milestones
+  const bestWave = game.meta.bestWave;
+  const progressLine = document.createElement("div");
+  progressLine.className = "card";
+  progressLine.style.cursor = "default";
+  progressLine.style.textAlign = "center";
+  
+  let lineHtml = "<b>Progress</b><br><div style='font-size: 20px; letter-spacing: 2px; margin: 12px 0; user-select: none;'>";
+  
+  // Create progress symbols for all waves up to bestWave + 1 more tier
+  const maxWaveToShow = Math.min(bestWave + BOSS_WAVE_INTERVAL, 24);
+  for (let wave = 1; wave <= maxWaveToShow; wave++) {
+    const isBoss = isBossWave(wave);
+    const isReached = wave <= bestWave;
+    const isCurrentWave = wave === game.wave;
+    
+    if (isBoss) {
+      const tier = getBossTierFromWave(wave);
+      const isLost = game.meta.lostBosses.includes(wave);
+      const symbol = isReached ? (isLost ? "✕" : "✓") : "○";
+      const color = isReached ? (isLost ? "#ff6b6b" : "#51cf66") : "#666";
+      const fontSize = isCurrentWave ? "24px" : "18px";
+      lineHtml += `<span style='font-size: ${fontSize}; color: ${color}; cursor: pointer; margin: 0 1px; display: inline-block; font-weight: bold; transition: all 0.2s;' onclick='document.dispatchEvent(new CustomEvent("startFromWave", { detail: { wave: ${wave - 1} } }))' onmouseover='this.style.fontSize="22px"; this.style.textShadow="0 0 8px ${color}";' onmouseout='this.style.fontSize="${fontSize}"; this.style.textShadow="none";' title='Boss ${tier}'>O</span>`;
+    } else {
+      const isLost = false; // Regular levels don't get marked as lost
+      const levelNum = wave % BOSS_WAVE_INTERVAL;
+      const color = isReached ? "#aaa" : "#666";
+      const fontSize = isCurrentWave ? "14px" : "12px";
+      lineHtml += `<span style='font-size: ${fontSize}; color: ${color}; cursor: pointer; margin: 0 1px; transition: all 0.2s;' onclick='document.dispatchEvent(new CustomEvent("startFromWave", { detail: { wave: ${wave - 1} } }))' onmouseover='this.style.fontSize="14px"; this.style.textShadow="0 0 4px ${color}";' onmouseout='this.style.fontSize="${fontSize}"; this.style.textShadow="none";' title='Level ${levelNum}'>o</span>`;
+    }
+  }
+  
+  lineHtml += "</div>";
+  progressLine.innerHTML = lineHtml;
+  ui.defeatModalCards.appendChild(progressLine);
+  
+  // Handle wave selection from progress line
+  document.addEventListener("startFromWave", (e) => {
+    const targetWave = e.detail.wave;
+    game.targetStartWave = targetWave;
+    game.mode = "hub";
+    hideDefeatModal();
+    
+    // Determine what we're starting at
+    const startingWave = targetWave + 1;
+    if (isBossWave(startingWave)) {
+      const tier = getBossTierFromWave(startingWave);
+      feed(`Ready to attempt Boss Level ${tier}. Choose an element.`);
+      setToast(`Starting at Boss Level ${tier}.`, "good");
+    } else {
+      const tierNum = Math.ceil(startingWave / BOSS_WAVE_INTERVAL);
+      const levelInTier = startingWave % BOSS_WAVE_INTERVAL;
+      feed(`Ready to begin at Level ${levelInTier}. Choose an element.`);
+      setToast(`Starting at Tier ${tierNum}, Level ${levelInTier}.`, "good");
+    }
+    updateUi();
+  }, { once: false });
+
+  // Progression tree with boss retry options
+  const tiers = getProgressionTiers();
+
+  if (tiers.length > 0) {
+    const progressionDiv = document.createElement("div");
+    progressionDiv.className = "card";
+    progressionDiv.style.cursor = "default";
+    const tierElements = tiers.map(tier => {
+      const levelLabels = tier.regularWaves.map(w => `Lv${w % BOSS_WAVE_INTERVAL}`).join(" → ");
+      const bossLabel = `Boss ${tier.tier}`;
+      const isReached = tier.isReached;
+      const isLost = tier.isLost;
+      const status = !isReached ? "⊘" : isLost ? "✕" : "✓";
+      const color = !isReached ? "#666" : isLost ? "#ff6b6b" : "#51cf66";
+      return `<div style="margin: 8px 0; padding: 8px; border-left: 4px solid ${color}; background: rgba(255,255,255,0.02); color: ${color}; font-size: 13px;">
+                <b>Tier ${tier.tier}:</b> ${levelLabels} → <b>${bossLabel}</b> ${status}
+              </div>`;
+    }).join("");
+    progressionDiv.innerHTML = `<b>Progression Tree</b>${tierElements}`;
+    ui.defeatModalCards.appendChild(progressionDiv);
+  }
+
+  // Retry boss buttons for lost bosses
+  const lostBosses = game.meta.lostBosses || [];
+  if (lostBosses.length > 0) {
+    const retryTitle = document.createElement("div");
+    retryTitle.className = "card";
+    retryTitle.style.cursor = "default";
+    retryTitle.innerHTML = "<b>Retry Boss Challenges</b>";
+    ui.defeatModalCards.appendChild(retryTitle);
+    
+    lostBosses.forEach(bossWave => {
+      const tier = getBossTierFromWave(bossWave);
+      const retryBtn = document.createElement("button");
+      retryBtn.className = "card";
+      retryBtn.innerHTML = `<b>Retry Boss Level ${tier}</b><br>Start from before this boss challenge.`;
+      retryBtn.style.background = "#c92a2a";
+      retryBtn.style.color = "white";
+      retryBtn.onclick = () => {
+        game.retryingBossWave = bossWave;
+        game.mode = "hub";
+        hideDefeatModal();
+        feed(`Ready to retry Boss Level ${tier}. Choose an element.`);
+        setToast(`Retrying Boss Level ${tier}.`, "good");
+        updateUi();
+      };
+      ui.defeatModalCards.appendChild(retryBtn);
+    });
+  }
+
+  const restartRun = document.createElement("button");
+  restartRun.className = "card";
+  restartRun.innerHTML = `<b>Restart Run</b><br>Jump back to element select and start again.`;
+  restartRun.onclick = () => {
+    hideDefeatModal();
+    game.mode = "hub";
+    feed("Choose an element on the canvas to begin.");
+    setToast("Ready for a new run.", "good");
+    updateUi();
+  };
+  ui.defeatModalCards.appendChild(restartRun);
+
+  const closeScreen = document.createElement("button");
+  closeScreen.className = "card";
+  closeScreen.innerHTML = `<b>Close End Screen</b><br>Stay here and manage upgrades.`;
+  closeScreen.onclick = () => {
+    hideDefeatModal();
+    game.mode = "hub";
+    feed("Choose an element on the canvas to begin.");
+    updateUi();
+  };
+  ui.defeatModalCards.appendChild(closeScreen);
+
   renderDefeatUpgradeMenu();
 }
 
@@ -1511,7 +2226,21 @@ function feed(msg) {
 
 function updateUi() {
   ui.phase.textContent = capitalize(game.mode);
-  ui.room.textContent = `${game.wave} / ${MAX_WAVES} (Lv ${game.level})`;
+  
+  // Display wave info with tier/boss structure
+  let waveDisplay = `Wave ${game.wave} / ${MAX_WAVES}`;
+  if (game.wave > 0 && game.mode === "running") {
+    if (isBossWave(game.wave)) {
+      const bossTier = getBossTierFromWave(game.wave);
+      waveDisplay = `Boss Level ${bossTier}`;
+    } else {
+      const bossTier = Math.ceil(game.wave / BOSS_WAVE_INTERVAL);
+      const levelInTier = game.wave % BOSS_WAVE_INTERVAL;
+      waveDisplay = `Tier ${bossTier}, Level ${levelInTier}/5`;
+    }
+  }
+  
+  ui.room.textContent = `${waveDisplay} (Lv ${game.level})`;
 
   const wallHp = game.wall ? `${Math.max(0, game.wall.hp).toFixed(0)} / ${game.wall.maxHp.toFixed(0)}` : "-";
   ui.hp.textContent = wallHp;
@@ -1527,7 +2256,11 @@ function updateUi() {
   }
 
   ui.biome.textContent = "North Siege Lane";
-  ui.modifier.textContent = `XP ${Math.floor(game.xp)} / ${Math.floor(game.xpToNext)}`;
+  if (game.bossPrep) {
+    ui.modifier.textContent = `Boss in ${Math.max(0, Math.ceil(game.bossPrepTimer))}s | XP ${Math.floor(game.xp)} / ${Math.floor(game.xpToNext)}`;
+  } else {
+    ui.modifier.textContent = `XP ${Math.floor(game.xp)} / ${Math.floor(game.xpToNext)}`;
+  }
   ui.character.textContent = "Sentinel (Stationary)";
 
   ui.runShards.textContent = Math.floor(game.runEssence);
@@ -1548,6 +2281,22 @@ function render() {
   drawEnemies();
   drawSparks();
   drawPowerBar();
+  drawBossCountdown();
+}
+
+function drawBossCountdown() {
+  if (!game.bossPrep) return;
+  const secs = Math.max(0, Math.ceil(game.bossPrepTimer));
+  ctx.fillStyle = "rgba(120, 20, 30, 0.4)";
+  ctx.fillRect(WIDTH * 0.5 - 138, 72, 276, 34);
+  ctx.strokeStyle = "rgba(255, 150, 160, 0.7)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(WIDTH * 0.5 - 138, 72, 276, 34);
+  ctx.fillStyle = "#ffd0d6";
+  ctx.font = "bold 15px Trebuchet MS";
+  ctx.textAlign = "center";
+  ctx.fillText(`Boss incoming: ${secs}s`, WIDTH * 0.5, 94);
+  ctx.textAlign = "left";
 }
 
 function drawBackground() {
@@ -1669,19 +2418,28 @@ function drawZones() {
     } else if (z.type === "windLine") {
       drawZigZagLine(z.x1, z.y1, z.x2, z.y2, "rgba(190, 245, 255, 0.82)", 5);
     } else if (z.type === "lava") {
-      ctx.fillStyle = "rgba(255, 95, 60, 0.30)";
+      const heat = 0.78 + Math.sin(game.time * 7) * 0.18;
+      ctx.fillStyle = `rgba(255, 95, 60, ${0.24 + heat * 0.12})`;
       circle(z.x, z.y, z.r);
       ctx.strokeStyle = "rgba(255, 140, 90, 0.75)";
       ctx.lineWidth = 2;
       ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 196, 120, ${0.24 + heat * 0.28})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(z.x, z.y, z.r * 0.58 + Math.sin(game.time * 5.4) * 3, 0, Math.PI * 2);
+      ctx.stroke();
     } else if (z.type === "mist") {
-      ctx.fillStyle = "rgba(160, 220, 190, 0.18)";
+      const swirl = Math.sin(game.time * 4.5);
+      ctx.fillStyle = `rgba(160, 220, 190, ${0.14 + (swirl + 1) * 0.03})`;
       circle(z.x, z.y, z.r);
       ctx.strokeStyle = "rgba(160, 220, 190, 0.55)";
       ctx.lineWidth = 1.5;
       ctx.stroke();
-      ctx.fillStyle = "rgba(160, 220, 190, 0.28)";
-      circle(z.x, z.y, z.r * 0.55);
+      ctx.fillStyle = "rgba(160, 220, 190, 0.25)";
+      circle(z.x + swirl * 6, z.y - swirl * 3, z.r * 0.42);
+      ctx.fillStyle = "rgba(178, 240, 210, 0.16)";
+      circle(z.x - swirl * 5, z.y + swirl * 4, z.r * 0.3);
     } else if (z.type === "storm") {
       const pulse = (Math.sin(game.time * 8) * 0.12 + 0.88);
       ctx.fillStyle = `rgba(120, 180, 255, ${0.18 * pulse})`;
@@ -1694,6 +2452,7 @@ function drawZones() {
       ctx.beginPath();
       ctx.arc(z.x, z.y, z.r * 0.5, 0, Math.PI * 2);
       ctx.stroke();
+      drawZigZagLine(z.x - z.r * 0.45, z.y - z.r * 0.2, z.x + z.r * 0.45, z.y + z.r * 0.2, "rgba(205,232,255,0.55)", 1.2);
     } else if (z.type === "quicksand") {
       ctx.fillStyle = "rgba(180, 150, 80, 0.22)";
       circle(z.x, z.y, z.r);
@@ -1704,6 +2463,12 @@ function drawZones() {
       ctx.beginPath();
       ctx.arc(z.x, z.y, z.r * 0.5 + Math.sin(game.time * 3) * 4, 0, Math.PI * 2);
       ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const a = game.time * 1.6 + i * 2.09;
+        const rr = z.r * (0.33 + i * 0.16);
+        ctx.fillStyle = "rgba(216, 186, 120, 0.24)";
+        circle(z.x + Math.cos(a) * rr * 0.35, z.y + Math.sin(a) * rr * 0.35, 2 + i);
+      }
     }
   }
 }
@@ -1715,6 +2480,24 @@ function drawSparks() {
     circle(s.x, s.y, s.r);
     ctx.globalAlpha = 1;
   }
+}
+
+function getSynergyStateTag(key) {
+  if (key === "mist") return "PULSE+HEAL";
+  if (key === "storm") return "STRIKE";
+  if (key === "chain") return "FORK";
+  if (key === "quicksand") return "PULL+CRUSH";
+  if (key === "magma") return "ERUPT";
+  return "";
+}
+
+function getSynergyTagColors(key) {
+  if (key === "mist") return { bg: "rgba(130, 220, 176, 0.2)", line: "rgba(160, 250, 205, 0.6)", text: "#b9ffe0" };
+  if (key === "storm") return { bg: "rgba(120, 170, 255, 0.2)", line: "rgba(170, 210, 255, 0.65)", text: "#d8ecff" };
+  if (key === "chain") return { bg: "rgba(160, 210, 255, 0.2)", line: "rgba(195, 235, 255, 0.65)", text: "#e2f6ff" };
+  if (key === "quicksand") return { bg: "rgba(200, 165, 95, 0.24)", line: "rgba(230, 200, 130, 0.65)", text: "#ffe6b8" };
+  if (key === "magma") return { bg: "rgba(255, 120, 80, 0.22)", line: "rgba(255, 170, 130, 0.68)", text: "#ffd2bf" };
+  return { bg: "rgba(122, 232, 216, 0.16)", line: "rgba(122, 232, 216, 0.55)", text: "#9ef3e7" };
 }
 
 function drawPowerBar() {
@@ -1809,6 +2592,22 @@ function drawPowerBar() {
     } else if (!isCombo && mergeHints[key]) {
       ctx.fillStyle = "#ffa040";
       ctx.fillText(mergeHints[key], x + 6, y + 26);
+    }
+
+    if (isCombo && isActive) {
+      const tag = getSynergyStateTag(key);
+      if (tag) {
+        const tagColors = getSynergyTagColors(key);
+        const tagW = Math.min(58, 8 + tag.length * 4);
+        ctx.fillStyle = tagColors.bg;
+        ctx.fillRect(x + BOX_W - tagW - 5, y + 3, tagW, 10);
+        ctx.strokeStyle = tagColors.line;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + BOX_W - tagW - 5, y + 3, tagW, 10);
+        ctx.fillStyle = tagColors.text;
+        ctx.font = "bold 7px Trebuchet MS";
+        ctx.fillText(tag, x + BOX_W - tagW + 0, y + 10);
+      }
     }
 
     // CD bar
@@ -1943,6 +2742,7 @@ function loadMeta() {
   const fallback = {
     totalEssence: 0,
     bestWave: 0,
+    lostBosses: [], // Array of boss wave numbers where player was defeated
     defeatUpgrades: { wallTech: 0, xpBoost: 0, essenceBoost: 0, damageBoost: 0, castSpeedBoost: 0 },
   };
   try {
@@ -1952,6 +2752,7 @@ function loadMeta() {
     return {
       totalEssence: parsed.totalEssence || 0,
       bestWave: parsed.bestWave || 0,
+      lostBosses: parsed.lostBosses || [],
       defeatUpgrades: {
         wallTech: (parsed.defeatUpgrades && parsed.defeatUpgrades.wallTech) || 0,
         xpBoost: (parsed.defeatUpgrades && parsed.defeatUpgrades.xpBoost) || 0,
