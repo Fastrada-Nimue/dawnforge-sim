@@ -123,18 +123,18 @@ const game = {
 setupUi();
 applyWindowMode();
 resetOverlayToFeed();
-feed("Choose an element on the canvas to begin.");
+openStartingElementOverlay();
 installRuntimeGuards();
 updateUi();
 requestAnimationFrame(loop);
 
 function setupUi() {
-  ui.startBtn.textContent = "Pick Starting Element";
+  ui.startBtn.textContent = "Pick Starting Power";
   ui.startBtn.onclick = () => {
     hideDefeatModal();
     input.mouseDown = false;
     game.mode = "hub";
-    feed("Choose an element on the canvas to begin.");
+    openStartingElementOverlay();
     updateUi();
   };
   if (ui.restartBtn) ui.restartBtn.onclick = () => {
@@ -152,6 +152,20 @@ function setupUi() {
     document.addEventListener("MSFullscreenChange", updateFullscreenButton);
     updateFullscreenButton();
   }
+}
+
+function openStartingElementOverlay() {
+  const choices = ["arc", "fire", "earth", "water", "wind"].map((key) => ({
+    key,
+    name: `Start with ${capitalize(key === "arc" ? "arc bolt" : key)}`,
+    desc: getStartingPowerDesc(key),
+  }));
+
+  renderChoiceOverlay("Choose Your Starting Power", choices, (choice) => {
+    hideDefeatModal();
+    startGameWithElement(choice.key);
+  });
+  setToast("Pick a starting power from the cards or click one on the canvas.", "good");
 }
 
 function applyWindowMode() {
