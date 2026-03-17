@@ -1892,7 +1892,7 @@ function generateLevelUpChoices() {
     },
   });
 
-  return pickWeightedUnique(choices, 4);
+  return pickWeightedUnique(choices, 6);
 }
 
 function openStartingPowerDraft() {
@@ -2852,7 +2852,7 @@ function generateUpgradeChoices() {
     },
   });
 
-  const out = pickWeightedUnique(pool, 4);
+  const out = pickWeightedUnique(pool, 6);
 
   if (unlockPool.length > 0) {
     const unlockCards = pickWeightedUnlockCards(unlockPool, Math.min(2, unlockPool.length));
