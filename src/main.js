@@ -1897,7 +1897,26 @@ function generateLevelUpChoices() {
     },
   });
 
-  return pickWeightedUnique(choices, 6);
+  const out = pickWeightedUnique(choices, 6);
+
+  // Ensure the first level-up draft includes element unlock options.
+  if (game.level <= 1) {
+    const elementChoices = getLockedBasePowers().map((key) => ({
+      name: `Learn ${game.powers[key].name}`,
+      desc: getElementChoiceDesc(key),
+      apply: () => {
+        unlockPower(key, false);
+        rememberPreferredElement(key);
+        feed(`${game.powers[key].name} learned at level ${game.level}.`);
+        setToast(`${game.powers[key].name} joined your attack volley.`, "good");
+      },
+    }));
+
+    const elementOptions = pickWeightedUnique(elementChoices, Math.min(2, elementChoices.length));
+    for (let i = 0; i < elementOptions.length && i < out.length; i++) out[i] = elementOptions[i];
+  }
+
+  return out;
 }
 
 function openStartingPowerDraft() {
