@@ -72,6 +72,7 @@ const input = {
 };
 
 let startScreenBoxes = [];
+let powerBarBoxes = [];
 
 const powerOrder = ["fire", "earth", "water", "wind"];
 const basePowerOrder = ["arc", ...powerOrder];
@@ -118,6 +119,7 @@ const game = {
   lastEndSummary: null,
   retryingBossWave: null,
   targetStartWave: null, // For jumping to any wave (regular or boss)
+  selectedCastKey: null,
   meta: loadMeta(),
 };
 setupUi();
@@ -231,7 +233,19 @@ function setupInput() {
       return;
     }
     if (game.mode !== "running") return;
+
+    for (const box of powerBarBoxes) {
+      if (!box.active) continue;
+      if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
+          input.mouseY >= box.y && input.mouseY <= box.y + box.h) {
+        game.selectedCastKey = box.key;
+        setToast(`Selected ${box.label}.`, "good");
+        return;
+      }
+    }
+
     input.mouseDown = true;
+    castSelectedPower(input.mouseX, input.mouseY);
   });
 
   canvas.addEventListener("mouseup", (e) => {
@@ -261,7 +275,19 @@ function setupInput() {
     }
 
     if (game.mode === "running") {
+      for (const box of powerBarBoxes) {
+        if (!box.active) continue;
+        if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
+            input.mouseY >= box.y && input.mouseY <= box.y + box.h) {
+          game.selectedCastKey = box.key;
+          setToast(`Selected ${box.label}.`, "good");
+          e.preventDefault();
+          return;
+        }
+      }
+
       input.mouseDown = true;
+      castSelectedPower(input.mouseX, input.mouseY);
       e.preventDefault();
     }
   }, { passive: false });
@@ -297,6 +323,7 @@ function startGame() {
   game.pendingLevelChoices = 0;
   game.xpToNext = getXpForNextLevel(game.level);
   game.time = 0;
+  game.selectedCastKey = null;
 
   game.wall = {
     x: WIDTH * 0.5 - 190,
@@ -743,6 +770,10 @@ function castSelectedPower(tx, ty) {
   const volleyPowers = getUnlockedVolleyPowers();
   if (volleyPowers.length === 0) return;
 
+  if (game.selectedCastKey && volleyPowers.includes(game.selectedCastKey)) {
+    return tryCastPower(game.selectedCastKey, tx, ty, 0);
+  }
+
   const center = (volleyPowers.length - 1) * 0.5;
   let castAny = false;
   for (let i = 0; i < volleyPowers.length; i++) {
@@ -1143,6 +1174,7 @@ function startGameWithElement(key) {
   game.pendingLevelChoices = 0;
   game.xpToNext = getXpForNextLevel(0);
   game.time = 0;
+  game.selectedCastKey = key;
 
   game.wall = {
     x: WIDTH * 0.5 - 190,
@@ -2548,6 +2580,7 @@ function getSynergyTagColors(key) {
 
 function drawPowerBar() {
   if (!game.powers) return;
+  powerBarBoxes = [];
 
   // Determine active combos and consumed base skills
   const consumed = new Set();
@@ -2614,6 +2647,12 @@ function drawPowerBar() {
       : "#41506a";
     ctx.strokeRect(x, y, BOX_W, BOX_H);
 
+    if (game.selectedCastKey === key && isActive) {
+      ctx.strokeStyle = "#7ee89f";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, BOX_W - 2, BOX_H - 2);
+    }
+
     // Name + Level
     ctx.fillStyle = isConsumed ? "#7ae8d888" : isActive ? p.color : "#6f7a8a";
     ctx.font = "bold 11px Trebuchet MS";
@@ -2664,6 +2703,8 @@ function drawPowerBar() {
     ctx.fillRect(x + 6, y + 32, BOX_W - 12, 7);
     ctx.fillStyle = !isActive ? "#4d5766" : game.powers[key].timer <= 0 ? "#7ee89f" : "#8cb7ff";
     ctx.fillRect(x + 6, y + 32, (BOX_W - 12) * Math.max(0, Math.min(1, cdRatio)), 7);
+
+    powerBarBoxes.push({ key, label: p.name, x, y, w: BOX_W, h: BOX_H, active: isActive });
 
     x += BOX_W + GAP;
   }
