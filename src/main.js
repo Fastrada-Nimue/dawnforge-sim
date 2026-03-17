@@ -528,6 +528,8 @@ function spawnBossEnemy() {
     burn: 0, slow: 0, stun: 0, snare: 0,
   });
   game.bossSpawnedThisWave = true;
+  spawnCastPulse(WIDTH * 0.5, 54, "rgba(255, 170, 196, 0.95)", 120, 0.46);
+  triggerScreenShake(0.15, 3.6);
   for (let i = 0; i < 20; i++) spawnSpark(WIDTH * 0.5, 42 + Math.random() * 48, profile.tier >= 2 ? "#ffb1d2" : "#d9a8ff", 1.8);
   setToast(`Boss tier ${profile.tier} entered the lane.`, "danger");
 }
@@ -2955,7 +2957,23 @@ function render() {
 function drawBossCountdown() {
   if (!game.bossPrep) return;
   const secs = Math.max(0, Math.ceil(game.bossPrepTimer));
-  ctx.fillStyle = "rgba(120, 20, 30, 0.4)";
+
+  const pulse = 0.5 + Math.sin(game.time * 8.5) * 0.5;
+  const dangerAlpha = 0.1 + pulse * 0.12;
+  ctx.fillStyle = `rgba(255, 64, 88, ${dangerAlpha})`;
+  ctx.fillRect(0, 0, WIDTH, 26 + pulse * 8);
+  drawZigZagLine(WIDTH * 0.5, 22, WIDTH * 0.5 - 180, 98, "rgba(255, 124, 148, 0.42)", 1.1);
+  drawZigZagLine(WIDTH * 0.5, 22, WIDTH * 0.5 + 180, 98, "rgba(255, 124, 148, 0.42)", 1.1);
+
+  ctx.globalAlpha = 0.3 + pulse * 0.2;
+  ctx.strokeStyle = "#ff9caf";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(WIDTH * 0.5, 54, 14 + pulse * 10, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = "rgba(120, 20, 30, 0.45)";
   ctx.fillRect(WIDTH * 0.5 - 138, 72, 276, 34);
   ctx.strokeStyle = "rgba(255, 150, 160, 0.7)";
   ctx.lineWidth = 1.5;
@@ -2967,23 +2985,77 @@ function drawBossCountdown() {
   ctx.textAlign = "left";
 }
 
+function getBiomeVisualTheme() {
+  const wave = Math.max(1, game.wave || 1);
+  const tier = Math.max(1, Math.ceil(wave / BOSS_WAVE_INTERVAL));
+  const phase = ((wave - 1) % BOSS_WAVE_INTERVAL) / BOSS_WAVE_INTERVAL;
+  const warm = phase;
+  const cool = 1 - phase;
+  const bossBoost = game.bossPrep ? 0.18 : 0;
+
+  const top = {
+    r: Math.round(20 + warm * 32 + bossBoost * 140),
+    g: Math.round(16 + cool * 16),
+    b: Math.round(25 + cool * 40),
+  };
+  const mid = {
+    r: Math.round(14 + warm * 20 + tier * 2),
+    g: Math.round(24 + cool * 28),
+    b: Math.round(36 + cool * 34),
+  };
+  const bot = {
+    r: Math.round(10 + warm * 8),
+    g: Math.round(16 + cool * 12),
+    b: Math.round(24 + cool * 18),
+  };
+
+  const lane = {
+    r: Math.round(88 + cool * 18),
+    g: Math.round(124 + cool * 24 - warm * 14),
+    b: Math.round(198 - warm * 46 + cool * 8),
+    a: 0.1 + cool * 0.04 + bossBoost * 0.2,
+  };
+
+  return {
+    top: `rgb(${top.r}, ${top.g}, ${top.b})`,
+    mid: `rgb(${mid.r}, ${mid.g}, ${mid.b})`,
+    bot: `rgb(${bot.r}, ${bot.g}, ${bot.b})`,
+    lane: `rgba(${lane.r}, ${lane.g}, ${lane.b}, ${lane.a.toFixed(3)})`,
+    grid: `rgba(${178 + tier * 2}, ${164 + tier}, ${156 + tier}, ${(0.045 + cool * 0.03).toFixed(3)})`,
+    topBand: `rgba(255, ${90 + Math.round(cool * 26)}, ${72 + Math.round(cool * 18)}, ${(0.08 + warm * 0.06 + bossBoost * 0.32).toFixed(3)})`,
+  };
+}
+
+function drawFusionBloom(x, y, radius, core, edge, alpha = 0.34) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(x, y, radius * 0.2, x, y, radius);
+  g.addColorStop(0, core);
+  g.addColorStop(1, edge);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = g;
+  circle(x, y, radius);
+  ctx.restore();
+}
+
 function drawBackground() {
   ensureAmbientMotes();
+  const theme = getBiomeVisualTheme();
 
   const g = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-  g.addColorStop(0, "#211116");
-  g.addColorStop(0.45, "#121a27");
-  g.addColorStop(1, "#0b1119");
+  g.addColorStop(0, theme.top);
+  g.addColorStop(0.45, theme.mid);
+  g.addColorStop(1, theme.bot);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
   const laneGlow = ctx.createRadialGradient(WIDTH * 0.5, HEIGHT * 0.38, 40, WIDTH * 0.5, HEIGHT * 0.38, WIDTH * 0.55);
-  laneGlow.addColorStop(0, "rgba(88, 130, 198, 0.12)");
+  laneGlow.addColorStop(0, theme.lane);
   laneGlow.addColorStop(1, "rgba(88, 130, 198, 0)");
   ctx.fillStyle = laneGlow;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  ctx.strokeStyle = "rgba(184, 172, 160, 0.065)";
+  ctx.strokeStyle = theme.grid;
   for (let y = 0; y < HEIGHT; y += 28) {
     ctx.beginPath();
     ctx.moveTo(0, y + Math.sin(game.time * 0.35 + y * 0.05) * 1.2);
@@ -2996,7 +3068,7 @@ function drawBackground() {
     circle(m.x, m.y, m.r * m.z);
   }
 
-  ctx.fillStyle = "rgba(255, 98, 72, 0.09)";
+  ctx.fillStyle = theme.topBand;
   ctx.fillRect(0, 0, WIDTH, 34);
 
   const vignette = ctx.createRadialGradient(WIDTH * 0.5, HEIGHT * 0.52, WIDTH * 0.22, WIDTH * 0.5, HEIGHT * 0.52, WIDTH * 0.72);
@@ -3133,6 +3205,7 @@ function drawZones() {
     } else if (z.type === "windLine") {
       drawZigZagLine(z.x1, z.y1, z.x2, z.y2, "rgba(190, 245, 255, 0.82)", 5);
     } else if (z.type === "lava") {
+      drawFusionBloom(z.x, z.y, z.r * 1.35, "rgba(255, 166, 120, 0.55)", "rgba(255, 110, 56, 0)", 0.22);
       const heat = 0.76 + Math.sin(game.time * 7.5) * 0.2;
       const innerPulse = z.r * (0.45 + 0.06 * Math.sin(game.time * 6.2));
 
@@ -3174,6 +3247,7 @@ function drawZones() {
         circle(z.x + Math.cos(a) * rr * 0.7, z.y + Math.sin(a) * rr * 0.7, 2.2);
       }
     } else if (z.type === "mist") {
+      drawFusionBloom(z.x, z.y, z.r * 1.25, "rgba(186, 246, 214, 0.52)", "rgba(126, 202, 178, 0)", 0.2);
       const swirl = Math.sin(game.time * 4.5);
       ctx.fillStyle = `rgba(160, 220, 190, ${0.14 + (swirl + 1) * 0.03})`;
       circle(z.x, z.y, z.r);
@@ -3185,6 +3259,7 @@ function drawZones() {
       ctx.fillStyle = "rgba(178, 240, 210, 0.16)";
       circle(z.x - swirl * 5, z.y + swirl * 4, z.r * 0.3);
     } else if (z.type === "storm") {
+      drawFusionBloom(z.x, z.y, z.r * 1.25, "rgba(176, 210, 255, 0.48)", "rgba(120, 160, 245, 0)", 0.2);
       const pulse = (Math.sin(game.time * 8) * 0.12 + 0.88);
       ctx.fillStyle = `rgba(120, 180, 255, ${0.18 * pulse})`;
       circle(z.x, z.y, z.r);
@@ -3198,6 +3273,7 @@ function drawZones() {
       ctx.stroke();
       drawZigZagLine(z.x - z.r * 0.45, z.y - z.r * 0.2, z.x + z.r * 0.45, z.y + z.r * 0.2, "rgba(205,232,255,0.55)", 1.2);
     } else if (z.type === "quicksand") {
+      drawFusionBloom(z.x, z.y, z.r * 1.2, "rgba(255, 218, 150, 0.44)", "rgba(215, 165, 92, 0)", 0.18);
       ctx.fillStyle = "rgba(180, 150, 80, 0.22)";
       circle(z.x, z.y, z.r);
       ctx.strokeStyle = "rgba(200, 165, 90, 0.55)";
@@ -3214,6 +3290,7 @@ function drawZones() {
         circle(z.x + Math.cos(a) * rr * 0.35, z.y + Math.sin(a) * rr * 0.35, 2 + i);
       }
     } else if (z.type === "chainField") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(220, 184, 255, 0.52)", "rgba(166, 116, 255, 0)", 0.22);
       const pulse = 0.78 + Math.sin(game.time * 11) * 0.18;
       ctx.fillStyle = `rgba(166, 116, 255, ${0.18 * pulse})`;
       circle(z.x, z.y, z.r);
@@ -3226,6 +3303,7 @@ function drawZones() {
         }
       }
     } else if (z.type === "plasma") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(255, 190, 226, 0.56)", "rgba(255, 110, 182, 0)", 0.22);
       const pulse = 0.8 + Math.sin(game.time * 8.3) * 0.16;
       ctx.fillStyle = `rgba(255, 104, 170, ${0.18 * pulse})`;
       circle(z.x, z.y, z.r);
@@ -3234,6 +3312,7 @@ function drawZones() {
       ctx.stroke();
       drawZigZagLine(z.x - z.r * 0.45, z.y + z.r * 0.2, z.x + z.r * 0.45, z.y - z.r * 0.2, "rgba(255, 190, 230, 0.52)", 1.1);
     } else if (z.type === "riptide") {
+      drawFusionBloom(z.x, z.y, z.r * 1.22, "rgba(188, 226, 255, 0.54)", "rgba(118, 178, 255, 0)", 0.2);
       const pulse = 0.8 + Math.sin(game.time * 7.2) * 0.14;
       ctx.fillStyle = `rgba(118, 178, 255, ${0.16 * pulse})`;
       circle(z.x, z.y, z.r);
@@ -3245,6 +3324,7 @@ function drawZones() {
       ctx.arc(z.x, z.y, z.r * 0.55 + Math.sin(game.time * 4.5) * 2.5, 0, Math.PI * 2);
       ctx.stroke();
     } else if (z.type === "triad" && z.variant === "monsoon") {
+      drawFusionBloom(z.x, z.y, z.r * 1.24, "rgba(184, 242, 255, 0.54)", "rgba(115, 215, 255, 0)", 0.22);
       const pulse = 0.75 + Math.sin(game.time * 9) * 0.2;
       ctx.fillStyle = `rgba(115, 215, 255, ${0.18 * pulse})`;
       circle(z.x, z.y, z.r);
@@ -3253,6 +3333,7 @@ function drawZones() {
       ctx.stroke();
       drawZigZagLine(z.x - z.r * 0.5, z.y, z.x + z.r * 0.5, z.y, "rgba(210, 250, 255, 0.55)", 1.5);
     } else if (z.type === "triad" && z.variant === "sandglass") {
+      drawFusionBloom(z.x, z.y, z.r * 1.2, "rgba(255, 226, 170, 0.5)", "rgba(255, 176, 110, 0)", 0.2);
       const spin = game.time * 2.6;
       ctx.fillStyle = "rgba(255, 205, 125, 0.2)";
       circle(z.x, z.y, z.r);
@@ -3264,6 +3345,7 @@ function drawZones() {
         drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.72, z.y + Math.sin(a) * z.r * 0.72, "rgba(255, 145, 95, 0.62)", 1.2);
       }
     } else if (z.type === "triad" && z.variant === "mudflow") {
+      drawFusionBloom(z.x, z.y, z.r * 1.2, "rgba(255, 194, 152, 0.46)", "rgba(208, 122, 86, 0)", 0.2);
       const wobble = Math.sin(game.time * 5.5) * 0.18;
       ctx.fillStyle = `rgba(208, 122, 86, ${0.22 + wobble * 0.08})`;
       circle(z.x, z.y, z.r);
@@ -3273,6 +3355,7 @@ function drawZones() {
       ctx.fillStyle = "rgba(120, 80, 58, 0.18)";
       circle(z.x + 4, z.y - 3, z.r * 0.52);
     } else if (z.type === "triad" && z.variant === "blizzard") {
+      drawFusionBloom(z.x, z.y, z.r * 1.24, "rgba(220, 248, 255, 0.58)", "rgba(164, 220, 255, 0)", 0.23);
       const chill = 0.75 + Math.sin(game.time * 7.2) * 0.15;
       ctx.fillStyle = `rgba(180, 235, 255, ${0.2 * chill})`;
       circle(z.x, z.y, z.r);
@@ -3284,6 +3367,7 @@ function drawZones() {
         drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.62, z.y + Math.sin(a) * z.r * 0.62, "rgba(215,245,255,0.45)", 1);
       }
     } else if (z.type === "apex" && z.variant === "cataclysm") {
+      drawFusionBloom(z.x, z.y, z.r * 1.26, "rgba(248, 230, 255, 0.64)", "rgba(226, 170, 255, 0)", 0.26);
       const pulse = 0.78 + Math.sin(game.time * 10.5) * 0.2;
       ctx.fillStyle = `rgba(226, 170, 255, ${0.2 * pulse})`;
       circle(z.x, z.y, z.r);
