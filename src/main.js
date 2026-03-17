@@ -115,7 +115,7 @@ function getActiveFusionState() {
   const qb = game.powers && game.powers[QUAD_COMBO_DEF.b];
   const qc = game.powers && game.powers[QUAD_COMBO_DEF.c];
   const qd = game.powers && game.powers[QUAD_COMBO_DEF.d];
-  if (qa && qb && qc && qd && qa.unlocked && qb.unlocked && qc.unlocked && qd.unlocked &&
+  if (game.apexFusionUnlocked && qa && qb && qc && qd && qa.unlocked && qb.unlocked && qc.unlocked && qd.unlocked &&
       qa.level >= QUAD_COMBO_DEF.minLevel && qb.level >= QUAD_COMBO_DEF.minLevel &&
       qc.level >= QUAD_COMBO_DEF.minLevel && qd.level >= QUAD_COMBO_DEF.minLevel) {
     activeComboKeys.push(QUAD_COMBO_DEF.key);
@@ -164,6 +164,26 @@ function getActiveFusionState() {
   return { consumed, activeComboKeys, sourcesByKey };
 }
 
+function getApexConvergenceSources(fusion) {
+  const srcMap = (fusion && fusion.sourcesByKey) || {};
+  const pairKeys = Object.keys(srcMap).filter((k) => {
+    const src = srcMap[k] || [];
+    return src.length === 2;
+  });
+
+  for (let i = 0; i < pairKeys.length; i++) {
+    for (let j = i + 1; j < pairKeys.length; j++) {
+      const a = srcMap[pairKeys[i]] || [];
+      const b = srcMap[pairKeys[j]] || [];
+      const union = new Set([...a, ...b]);
+      if (union.size !== 4) continue;
+      const ok = [QUAD_COMBO_DEF.a, QUAD_COMBO_DEF.b, QUAD_COMBO_DEF.c, QUAD_COMBO_DEF.d].every((k) => union.has(k));
+      if (ok) return [...union];
+    }
+  }
+  return null;
+}
+
 const game = {
   mode: "hub", // hub | running | upgrade | gameover | victory
   wave: 0,
@@ -198,6 +218,7 @@ const game = {
   retryingBossWave: null,
   targetStartWave: null, // For jumping to any wave (regular or boss)
   selectedCastKey: null,
+  apexFusionUnlocked: false,
   meta: loadMeta(),
 };
 setupInput();
@@ -403,6 +424,7 @@ function startGame() {
   game.xpToNext = getXpForNextLevel(game.level);
   game.time = 0;
   game.selectedCastKey = null;
+  game.apexFusionUnlocked = false;
 
   game.wall = {
     x: WIDTH * 0.5 - 190,
@@ -1426,6 +1448,7 @@ function startGameWithElement(key) {
   game.xpToNext = getXpForNextLevel(0);
   game.time = 0;
   game.selectedCastKey = key;
+  game.apexFusionUnlocked = false;
 
   game.wall = {
     x: WIDTH * 0.5 - 190,
@@ -2130,8 +2153,29 @@ function generateUpgradeChoices() {
 
   const out = pickWeightedUnique(pool, 4);
 
+  const apexSources = getApexConvergenceSources(fusion);
+  const canConvergeToApex = !game.apexFusionUnlocked && !!apexSources;
+  if (canConvergeToApex) {
+    out[0] = {
+      name: "Converge Active Synergies",
+      desc: "Fuse your two dual synergies into Cataclysm (4-element apex fusion).",
+      apply: () => {
+        game.apexFusionUnlocked = true;
+        for (const k of [QUAD_COMBO_DEF.a, QUAD_COMBO_DEF.b, QUAD_COMBO_DEF.c, QUAD_COMBO_DEF.d]) {
+          if (game.powers[k]) {
+            game.powers[k].unlocked = true;
+            game.powers[k].level = Math.max(game.powers[k].level, QUAD_COMBO_DEF.minLevel);
+          }
+        }
+        game.selectedCastKey = QUAD_COMBO_DEF.key;
+        feed("Active synergies converged into Cataclysm.");
+        setToast("Cataclysm unlocked.", "good");
+      },
+    };
+  }
+
   const magmaEligible = game.powers.fire.unlocked && game.powers.earth.unlocked && game.powers.fire.level >= 3 && game.powers.earth.level >= 3 && !game.magmaUnlocked;
-  if (magmaEligible) {
+  if (magmaEligible && !canConvergeToApex) {
     out[0] = {
       name: "Awaken Magma",
       desc: "Fire + Earth fusion unlocked. Magma joins your full attack volley.",
@@ -3124,9 +3168,11 @@ function drawPowerBar() {
   const activeComboKeys = fusion.activeComboKeys;
   const sourcesByKey = fusion.sourcesByKey;
 
-  // Build display list: base powers not consumed + active combos
+  // Build display list: only unlocked, non-consumed base powers + active combos
   const displayKeys = [];
-  for (const k of basePowerOrder) displayKeys.push(k); // always show all base
+  for (const k of basePowerOrder) {
+    if (game.powers[k] && game.powers[k].unlocked && !consumed.has(k)) displayKeys.push(k);
+  }
   for (const k of activeComboKeys) displayKeys.push(k);
   if (game.magmaUnlocked && game.powers.magma && game.powers.magma.unlocked && !activeComboKeys.includes("magma"))
     displayKeys.push("magma");
