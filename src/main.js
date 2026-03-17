@@ -260,6 +260,8 @@ const game = {
   tripleFusionUnlocked: makeFusionUnlockMap(TRIPLE_COMBO_DEFS),
   upgradeChoices: [],
   preferredElements: [],
+  unlockChainFocus: [],
+  unlockChainStacks: 0,
   pendingCrystalBonus: null,
   lastEndSummary: null,
   retryingBossWave: null,
@@ -470,6 +472,8 @@ function startGame() {
   game.magmaUnlocked = false;
   game.pairFusionUnlocked = makeFusionUnlockMap(COMBO_DEFS);
   game.tripleFusionUnlocked = makeFusionUnlockMap(TRIPLE_COMBO_DEFS);
+  game.unlockChainFocus = [];
+  game.unlockChainStacks = 0;
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
@@ -1876,6 +1880,8 @@ function startGameWithElement(key) {
   game.magmaUnlocked = false;
   game.pairFusionUnlocked = makeFusionUnlockMap(COMBO_DEFS);
   game.tripleFusionUnlocked = makeFusionUnlockMap(TRIPLE_COMBO_DEFS);
+  game.unlockChainFocus = [];
+  game.unlockChainStacks = 0;
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
@@ -2561,6 +2567,8 @@ function generateUpgradeChoices() {
   const unlockPool = [];
   const fusion = getActiveFusionState();
   const consumed = fusion.consumed;
+  const chainFocus = Array.isArray(game.unlockChainFocus) ? game.unlockChainFocus : [];
+  const chainStacks = Math.max(0, game.unlockChainStacks || 0);
 
   const getSourcesForPowerKey = (key) => {
     if (!key) return [];
@@ -2593,6 +2601,15 @@ function generateUpgradeChoices() {
         weight += overlap * 1.2;
       }
 
+      if (keys.length > 0 && chainFocus.length > 0) {
+        const chainOverlap = keys.filter((k) => chainFocus.includes(k)).length;
+        if (chainOverlap > 0) {
+          weight += chainOverlap * (1.05 + chainStacks * 0.35);
+        } else {
+          weight *= 0.88;
+        }
+      }
+
       if (card.unlockType === "triple") weight += 0.4;
       if (card.unlockType === "pair") weight += 0.25;
 
@@ -2616,6 +2633,15 @@ function generateUpgradeChoices() {
     return picked;
   };
 
+  const noteUnlockChain = (keys) => {
+    const fresh = (Array.isArray(keys) ? keys : []).filter((k) => basePowerOrder.includes(k));
+    if (!fresh.length) return;
+    const merged = [...new Set([...fresh, ...(Array.isArray(game.unlockChainFocus) ? game.unlockChainFocus : [])])];
+    game.unlockChainFocus = merged.slice(0, 3);
+    game.unlockChainStacks = Math.min(4, (game.unlockChainStacks || 0) + 1);
+    for (const key of fresh) rememberPreferredElement(key);
+  };
+
   const lockedBase = getLockedBasePowers();
   for (const key of lockedBase) {
     unlockPool.push({
@@ -2625,6 +2651,7 @@ function generateUpgradeChoices() {
       unlockKeys: [key],
       apply: () => {
         unlockPower(key, false);
+        noteUnlockChain([key]);
         feed(`${game.powers[key].name} learned at wave ${game.wave}.`);
         setToast(`${game.powers[key].name} joined your attack volley.`, "good");
       },
@@ -2645,6 +2672,7 @@ function generateUpgradeChoices() {
       unlockKeys: [def.a, def.b],
       apply: () => {
         game.pairFusionUnlocked[def.key] = true;
+        noteUnlockChain([def.a, def.b]);
         game.selectedCastKey = def.key;
         feed(`${capitalize(def.key)} awakened.`);
         setToast(`${capitalize(def.key)} unlocked.`, "good");
@@ -2667,6 +2695,7 @@ function generateUpgradeChoices() {
       unlockKeys: [def.a, def.b, def.c],
       apply: () => {
         game.tripleFusionUnlocked[def.key] = true;
+        noteUnlockChain([def.a, def.b, def.c]);
         game.selectedCastKey = def.key;
         feed(`${capitalize(def.key)} awakened.`);
         setToast(`${capitalize(def.key)} unlocked.`, "good");
@@ -2685,6 +2714,7 @@ function generateUpgradeChoices() {
         game.magmaUnlocked = true;
         game.powers.magma.level = 1;
         game.powers.magma.unlocked = true;
+        noteUnlockChain(["fire", "earth"]);
         game.selectedCastKey = "magma";
         feed("Magma awakened and added to your volley.");
       },
