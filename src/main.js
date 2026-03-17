@@ -235,7 +235,7 @@ function setupInput() {
     if (game.mode !== "running") return;
 
     for (const box of powerBarBoxes) {
-      if (!box.active) continue;
+      if (!box.selectable) continue;
       if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
           input.mouseY >= box.y && input.mouseY <= box.y + box.h) {
         game.selectedCastKey = box.key;
@@ -276,7 +276,7 @@ function setupInput() {
 
     if (game.mode === "running") {
       for (const box of powerBarBoxes) {
-        if (!box.active) continue;
+        if (!box.selectable) continue;
         if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
             input.mouseY >= box.y && input.mouseY <= box.y + box.h) {
           game.selectedCastKey = box.key;
@@ -770,7 +770,8 @@ function castSelectedPower(tx, ty) {
   const volleyPowers = getUnlockedVolleyPowers();
   if (volleyPowers.length === 0) return;
 
-  if (game.selectedCastKey && volleyPowers.includes(game.selectedCastKey)) {
+  // Allow explicit casting of unlocked base powers even when combos would normally consume them.
+  if (game.selectedCastKey && game.powers[game.selectedCastKey] && game.powers[game.selectedCastKey].unlocked) {
     return tryCastPower(game.selectedCastKey, tx, ty, 0);
   }
 
@@ -2647,7 +2648,7 @@ function drawPowerBar() {
       : "#41506a";
     ctx.strokeRect(x, y, BOX_W, BOX_H);
 
-    if (game.selectedCastKey === key && isActive) {
+    if (game.selectedCastKey === key && p.unlocked) {
       ctx.strokeStyle = "#7ee89f";
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1, y + 1, BOX_W - 2, BOX_H - 2);
@@ -2704,7 +2705,16 @@ function drawPowerBar() {
     ctx.fillStyle = !isActive ? "#4d5766" : game.powers[key].timer <= 0 ? "#7ee89f" : "#8cb7ff";
     ctx.fillRect(x + 6, y + 32, (BOX_W - 12) * Math.max(0, Math.min(1, cdRatio)), 7);
 
-    powerBarBoxes.push({ key, label: p.name, x, y, w: BOX_W, h: BOX_H, active: isActive });
+    powerBarBoxes.push({
+      key,
+      label: p.name,
+      x,
+      y,
+      w: BOX_W,
+      h: BOX_H,
+      active: isActive,
+      selectable: !!p.unlocked,
+    });
 
     x += BOX_W + GAP;
   }
