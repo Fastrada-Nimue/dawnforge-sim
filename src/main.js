@@ -127,6 +127,12 @@ function getApexDef(key) {
   return APEX_COMBO_DEFS.find((def) => def.key === key) || null;
 }
 
+function makeFusionUnlockMap(defs) {
+  const map = {};
+  for (const def of defs) map[def.key] = false;
+  return map;
+}
+
 function getActiveFusionState() {
   const consumed = new Set();
   const activeComboKeys = [];
@@ -152,6 +158,8 @@ function getActiveFusionState() {
   }
 
   for (const def of TRIPLE_COMBO_DEFS) {
+    const unlocked = game.tripleFusionUnlocked && game.tripleFusionUnlocked[def.key];
+    if (!unlocked) continue;
     if (consumed.has(def.a) || consumed.has(def.b) || consumed.has(def.c)) continue;
     const pa = game.powers && game.powers[def.a];
     const pb = game.powers && game.powers[def.b];
@@ -175,6 +183,8 @@ function getActiveFusionState() {
   }
 
   for (const def of COMBO_DEFS) {
+    const unlocked = game.pairFusionUnlocked && game.pairFusionUnlocked[def.key];
+    if (!unlocked) continue;
     if (consumed.has(def.a) || consumed.has(def.b)) continue;
     const pa = game.powers && game.powers[def.a];
     const pb = game.powers && game.powers[def.b];
@@ -246,6 +256,8 @@ const game = {
   hero: null,
   powers: null,
   magmaUnlocked: false,
+  pairFusionUnlocked: makeFusionUnlockMap(COMBO_DEFS),
+  tripleFusionUnlocked: makeFusionUnlockMap(TRIPLE_COMBO_DEFS),
   upgradeChoices: [],
   preferredElements: [],
   pendingCrystalBonus: null,
@@ -253,7 +265,7 @@ const game = {
   retryingBossWave: null,
   targetStartWave: null, // For jumping to any wave (regular or boss)
   selectedCastKey: null,
-  apexFusionUnlocked: { cataclysm: false, worldroot: false },
+  apexFusionUnlocked: makeFusionUnlockMap(APEX_COMBO_DEFS),
   screenShake: 0,
   screenShakeMag: 0,
   castPulses: [],
@@ -456,6 +468,8 @@ function startGame() {
   game.globalDamageMul = (1 + game.meta.defeatUpgrades.damageBoost * 0.1) * (1 + carry.damageBoostPct);
   game.cooldownMul = (1 / (1 + game.meta.defeatUpgrades.castSpeedBoost * 0.08)) / (1 + carry.castSpeedBoostPct);
   game.magmaUnlocked = false;
+  game.pairFusionUnlocked = makeFusionUnlockMap(COMBO_DEFS);
+  game.tripleFusionUnlocked = makeFusionUnlockMap(TRIPLE_COMBO_DEFS);
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
@@ -465,7 +479,7 @@ function startGame() {
   game.xpToNext = getXpForNextLevel(game.level);
   game.time = 0;
   game.selectedCastKey = null;
-  game.apexFusionUnlocked = { cataclysm: false, worldroot: false };
+  game.apexFusionUnlocked = makeFusionUnlockMap(APEX_COMBO_DEFS);
   game.screenShake = 0;
   game.screenShakeMag = 0;
 
@@ -1775,23 +1789,8 @@ function makeFusionUpgradeChoice(key, sources) {
 
 function generateLevelUpChoices() {
   const choices = [];
-  const fusion = getActiveFusionState();
-  const consumed = fusion.consumed;
 
-  const locked = getLockedBasePowers();
-  for (const key of locked) {
-    choices.push({
-      name: `Learn ${game.powers[key].name}`,
-      desc: `${getStartingPowerDesc(key)} Unlock it now and it joins every future volley.`,
-      apply: () => {
-        unlockPower(key, false);
-        feed(`${game.powers[key].name} learned at level ${game.level}.`);
-        setToast(`${game.powers[key].name} joined your attack volley.`, "good");
-      },
-    });
-  }
-
-  // General buffs fill level-up slots; element upgrades live in the between-room draft
+  // Level-ups only offer combat tempo boosts; unlocks now come from the between-wave upgrade draft.
   choices.push({
     name: "Spell Surge",
     desc: "+18% global damage",
@@ -1830,16 +1829,7 @@ function generateLevelUpChoices() {
     },
   });
 
-  const out = pickWeightedUnique(choices.filter((c) => c.name.indexOf("Learn ") !== 0), 4);
-  // Limit element unlock pressure so players always see upgrade alternatives.
-  const learnCards = choices.filter((c) => c.name.indexOf("Learn ") === 0);
-  const learnCap = Math.min(2, learnCards.length);
-  const selectedLearn = pickUnique(learnCards, learnCap);
-  const combined = [...selectedLearn, ...out].slice(0, 4);
-  if (selectedLearn.length > 0 && !combined.some((c) => c.name.indexOf("Learn ") === 0)) {
-    combined[combined.length - 1] = selectedLearn[0];
-  }
-  return combined.length ? combined : out;
+  return pickWeightedUnique(choices, 4);
 }
 
 function openStartingPowerDraft() {
@@ -1884,6 +1874,8 @@ function startGameWithElement(key) {
   game.globalDamageMul = (1 + game.meta.defeatUpgrades.damageBoost * 0.1) * (1 + carry.damageBoostPct);
   game.cooldownMul = (1 / (1 + game.meta.defeatUpgrades.castSpeedBoost * 0.08)) / (1 + carry.castSpeedBoostPct);
   game.magmaUnlocked = false;
+  game.pairFusionUnlocked = makeFusionUnlockMap(COMBO_DEFS);
+  game.tripleFusionUnlocked = makeFusionUnlockMap(TRIPLE_COMBO_DEFS);
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
@@ -1893,7 +1885,7 @@ function startGameWithElement(key) {
   game.xpToNext = getXpForNextLevel(0);
   game.time = 0;
   game.selectedCastKey = key;
-  game.apexFusionUnlocked = { cataclysm: false, worldroot: false };
+  game.apexFusionUnlocked = makeFusionUnlockMap(APEX_COMBO_DEFS);
   game.screenShake = 0;
   game.screenShakeMag = 0;
 
@@ -2566,8 +2558,76 @@ function addElementUpgradeChoices(pool, key) {
 
 function generateUpgradeChoices() {
   const pool = [];
+  const unlockPool = [];
   const fusion = getActiveFusionState();
   const consumed = fusion.consumed;
+
+  const lockedBase = getLockedBasePowers();
+  for (const key of lockedBase) {
+    unlockPool.push({
+      name: `Learn ${game.powers[key].name}`,
+      desc: `${getStartingPowerDesc(key)} Unlock it now and it joins every future volley.`,
+      apply: () => {
+        unlockPower(key, false);
+        feed(`${game.powers[key].name} learned at wave ${game.wave}.`);
+        setToast(`${game.powers[key].name} joined your attack volley.`, "good");
+      },
+    });
+  }
+
+  for (const def of COMBO_DEFS) {
+    if (game.pairFusionUnlocked && game.pairFusionUnlocked[def.key]) continue;
+    const pa = game.powers[def.a];
+    const pb = game.powers[def.b];
+    if (!pa || !pb || !pa.unlocked || !pb.unlocked) continue;
+    if (pa.level < def.minLevel || pb.level < def.minLevel) continue;
+
+    unlockPool.push({
+      name: `Awaken ${capitalize(def.key)}`,
+      desc: `${capitalize(def.a)} + ${capitalize(def.b)} fusion unlocked for your volley.`,
+      apply: () => {
+        game.pairFusionUnlocked[def.key] = true;
+        game.selectedCastKey = def.key;
+        feed(`${capitalize(def.key)} awakened.`);
+        setToast(`${capitalize(def.key)} unlocked.`, "good");
+      },
+    });
+  }
+
+  for (const def of TRIPLE_COMBO_DEFS) {
+    if (game.tripleFusionUnlocked && game.tripleFusionUnlocked[def.key]) continue;
+    const pa = game.powers[def.a];
+    const pb = game.powers[def.b];
+    const pc = game.powers[def.c];
+    if (!pa || !pb || !pc || !pa.unlocked || !pb.unlocked || !pc.unlocked) continue;
+    if (pa.level < def.minLevel || pb.level < def.minLevel || pc.level < def.minLevel) continue;
+
+    unlockPool.push({
+      name: `Awaken ${capitalize(def.key)}`,
+      desc: `${capitalize(def.a)} + ${capitalize(def.b)} + ${capitalize(def.c)} triad fusion unlocked.`,
+      apply: () => {
+        game.tripleFusionUnlocked[def.key] = true;
+        game.selectedCastKey = def.key;
+        feed(`${capitalize(def.key)} awakened.`);
+        setToast(`${capitalize(def.key)} unlocked.`, "good");
+      },
+    });
+  }
+
+  const magmaEligible = game.powers.fire.unlocked && game.powers.earth.unlocked && game.powers.fire.level >= 3 && game.powers.earth.level >= 3 && !game.magmaUnlocked;
+  if (magmaEligible) {
+    unlockPool.push({
+      name: "Awaken Magma",
+      desc: "Fire + Earth fusion unlocked. Magma joins your full attack volley.",
+      apply: () => {
+        game.magmaUnlocked = true;
+        game.powers.magma.level = 1;
+        game.powers.magma.unlocked = true;
+        game.selectedCastKey = "magma";
+        feed("Magma awakened and added to your volley.");
+      },
+    });
+  }
 
   const unlockedPowers = powerOrder.filter((key) => game.powers[key].unlocked);
   if (game.powers.arc.unlocked && !consumed.has("arc")) addElementUpgradeChoices(pool, "arc");
@@ -2643,6 +2703,11 @@ function generateUpgradeChoices() {
 
   const out = pickWeightedUnique(pool, 4);
 
+  if (unlockPool.length > 0) {
+    const unlockCards = pickWeightedUnique(unlockPool, Math.min(2, unlockPool.length));
+    for (let i = 0; i < unlockCards.length && i < out.length; i++) out[i] = unlockCards[i];
+  }
+
   const apexOptions = getApexConvergenceOptions(fusion);
   const apexOption = apexOptions[0] || null;
   const canConvergeToApex = !!apexOption;
@@ -2661,20 +2726,6 @@ function generateUpgradeChoices() {
         game.selectedCastKey = apexOption.def.key;
         feed(`Active synergies converged into ${game.powers[apexOption.def.key].name}.`);
         setToast(`${game.powers[apexOption.def.key].name} unlocked.`, "good");
-      },
-    };
-  }
-
-  const magmaEligible = game.powers.fire.unlocked && game.powers.earth.unlocked && game.powers.fire.level >= 3 && game.powers.earth.level >= 3 && !game.magmaUnlocked;
-  if (magmaEligible && !canConvergeToApex) {
-    out[0] = {
-      name: "Awaken Magma",
-      desc: "Fire + Earth fusion unlocked. Magma joins your full attack volley.",
-      apply: () => {
-        game.magmaUnlocked = true;
-        game.powers.magma.level = 1;
-        game.powers.magma.unlocked = true;
-        feed("Magma awakened and added to your volley.");
       },
     };
   }
@@ -3758,8 +3809,8 @@ function drawXpHud() {
 
 function getNextPowerHint() {
   if (!game.powers || getUnlockedBasePowers().length === 0) return "Pick a starting power to begin.";
-  if (getLockedBasePowers().length > 0) return "Next level: learn a new power or take a general boon.";
-  return "Next level: take a general boon for the run.";
+  if (getLockedBasePowers().length > 0) return "Between waves: unlock elements/fusions or take run upgrades.";
+  return "Between waves: pick upgrades to strengthen your current build.";
 }
 
 function drawWall() {
