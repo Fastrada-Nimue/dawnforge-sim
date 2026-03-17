@@ -88,9 +88,11 @@ const basePowerOrder = ["arc", ...powerOrder];
 // Elemental combo definitions — priority order matters; first entry wins on overlapping skills.
 // magma is unlock-gated via upgrade card and handled separately.
 const COMBO_DEFS = [
+  { key: "chain",     a: "arc",   b: "wind",  minLevel: 3 },
+  { key: "plasma",    a: "arc",   b: "fire",  minLevel: 3 },
+  { key: "riptide",   a: "arc",   b: "water", minLevel: 3 },
   { key: "mist",      a: "fire",  b: "water", minLevel: 3 },
   { key: "storm",     a: "water", b: "wind",  minLevel: 3 },
-  { key: "chain",     a: "arc",   b: "wind",  minLevel: 3 },
   { key: "quicksand", a: "earth", b: "water", minLevel: 3 },
 ];
 
@@ -417,18 +419,7 @@ function startGame() {
     r: 14,
   };
 
-  game.powers = {
-    arc: { level: 1, cd: 0.28, timer: 0, color: "#d6ecff", name: "Arc Bolt", unlocked: false, damageMul: 1.25, pierce: 1 },
-    fire: { level: 1, cd: 1.0, timer: 0, color: "#ff8a52", name: "Fire", unlocked: false, areaMul: 1, burnDamageMul: 1, burnDurationBonus: 0 },
-    earth: { level: 1, cd: 1.4, timer: 0, color: "#b7925a", name: "Earth", unlocked: false, damageMul: 1.22, slowBonus: 0.15, sizeMul: 1.15 },
-    water: { level: 1, cd: 1.1, timer: 0, color: "#65b9ff", name: "Water", unlocked: false, radiusMul: 1.18, healMul: 1.18, damageMul: 1.18 },
-    wind: { level: 1, cd: 0.95, timer: 0, color: "#bdeeff", name: "Wind", unlocked: false, widthMul: 1.18, pushMul: 1.18, durationMul: 1.18 },
-    magma:     { level: 0, cd: 2.2,  timer: 0, color: "#ff533d", name: "Magma",     unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
-    mist:      { level: 0, cd: 1.55, timer: 0, color: "#aaddcc", name: "Mist"      },
-    storm:     { level: 0, cd: 1.75, timer: 0, color: "#88bbff", name: "Storm"     },
-    chain:     { level: 0, cd: 0.6,  timer: 0, color: "#b8d8ff", name: "Chain Arc" },
-    quicksand: { level: 0, cd: 1.9,  timer: 0, color: "#c8a868", name: "Quicksand" },
-  };
+  game.powers = createInitialPowers();
 
   openStartingPowerDraft();
   setToast("Choose a starting power, then shape your build on each level up.", "good");
@@ -554,7 +545,7 @@ function update(dt) {
 
   game.time += dt;
 
-  for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "quicksand", "monsoon", "sandglass", "mudflow", "blizzard", "cataclysm"]) {
+  for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "plasma", "riptide", "quicksand", "monsoon", "sandglass", "mudflow", "blizzard", "cataclysm"]) {
     if (!game.powers[key]) continue;
     game.powers[key].timer = Math.max(0, game.powers[key].timer - dt);
   }
@@ -926,6 +917,8 @@ function getCappedCastTimer(powerKey, baseCd) {
     mist: 1.75,
     storm: 1.85,
     chain: 0.9,
+    plasma: 1.7,
+    riptide: 1.75,
     quicksand: 2.0,
     monsoon: 2.25,
     sandglass: 2.35,
@@ -1076,23 +1069,47 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         life: 1.6,
       });
     } else if (key === "chain") {
-      const bolts = Math.min(7, 3 + Math.floor(lAvg / 3));
-      for (let i = 0; i < bolts; i++) {
-        if (game.projectiles.length >= MAX_PROJECTILES) break;
-        const angle = aimed.angle + (i - (bolts - 1) * 0.5) * 0.16;
-        game.projectiles.push({
-          type: "arcBolt",
-          x: game.hero.x, y: game.hero.y - 8,
-          vx: Math.cos(angle) * 560,
-          vy: Math.sin(angle) * 560,
-          life: 0.75, r: 4,
-          damage: (20 + lAvg * 1.8) * game.globalDamageMul,
-          pierce: 3,
-          forks: 1,
-          forkRange: 118 + lAvg * 6,
-          forkDamageMul: 0.74,
-        });
-      }
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "chainField",
+        x: aimed.x, y: aimed.y,
+        r: 78 + lAvg * 8,
+        dps: (12 + lAvg * 3.8) * game.globalDamageMul,
+        linkCd: 0.26,
+        linkTimer: 0.26,
+        linkDamage: (20 + lAvg * 5) * game.globalDamageMul,
+        maxJumps: Math.min(7, 3 + Math.floor(lAvg / 2.5)),
+        links: [],
+        linkVisual: 0,
+        life: 1.85,
+      });
+    } else if (key === "plasma") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "plasma",
+        x: aimed.x, y: aimed.y,
+        r: 64 + lAvg * 8,
+        dps: (24 + lAvg * 5.5) * game.globalDamageMul,
+        burn: 0.75 + lAvg * 0.08,
+        surgeCd: 0.44,
+        surgeTimer: 0.44,
+        surgeDamage: (18 + lAvg * 4.8) * game.globalDamageMul,
+        life: 2.0,
+      });
+    } else if (key === "riptide") {
+      if (game.zones.length >= MAX_ZONES) game.zones.shift();
+      game.zones.push({
+        type: "riptide",
+        x: aimed.x, y: aimed.y,
+        r: 70 + lAvg * 8,
+        dps: (20 + lAvg * 5) * game.globalDamageMul,
+        slow: 0.72,
+        pulseCd: 0.38,
+        pulseTimer: 0.38,
+        pulseDamage: (14 + lAvg * 4.2) * game.globalDamageMul,
+        healPulse: 2.2 + lAvg * 0.7,
+        life: 2.05,
+      });
     } else if (key === "quicksand") {
       if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
@@ -1274,6 +1291,28 @@ function unlockPower(key, selectPower = false) {
   void selectPower;
 }
 
+function createInitialPowers() {
+  return {
+    arc:       { level: 1, cd: 0.28, timer: 0, color: "#d6ecff", name: "Arc Bolt", unlocked: false, damageMul: 1.25, pierce: 1 },
+    fire:      { level: 1, cd: 1.0,  timer: 0, color: "#ff8a52", name: "Fire",     unlocked: false, areaMul: 1, burnDamageMul: 1, burnDurationBonus: 0 },
+    earth:     { level: 1, cd: 1.4,  timer: 0, color: "#b7925a", name: "Earth",    unlocked: false, damageMul: 1.22, slowBonus: 0.15, sizeMul: 1.15 },
+    water:     { level: 1, cd: 1.1,  timer: 0, color: "#65b9ff", name: "Water",    unlocked: false, radiusMul: 1.18, healMul: 1.18, damageMul: 1.18 },
+    wind:      { level: 1, cd: 0.95, timer: 0, color: "#bdeeff", name: "Wind",     unlocked: false, widthMul: 1.18, pushMul: 1.18, durationMul: 1.18 },
+    magma:     { level: 0, cd: 2.2,  timer: 0, color: "#ff533d", name: "Magma",    unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
+    chain:     { level: 0, cd: 0.62, timer: 0, color: "#b885ff", name: "Chain Arc" },
+    plasma:    { level: 0, cd: 1.45, timer: 0, color: "#ff7fa6", name: "Plasma"    },
+    riptide:   { level: 0, cd: 1.48, timer: 0, color: "#8bc7ff", name: "Riptide"   },
+    mist:      { level: 0, cd: 1.55, timer: 0, color: "#aaddcc", name: "Mist"      },
+    storm:     { level: 0, cd: 1.75, timer: 0, color: "#88bbff", name: "Storm"     },
+    quicksand: { level: 0, cd: 1.9,  timer: 0, color: "#c8a868", name: "Quicksand" },
+    monsoon:   { level: 0, cd: 2.05, timer: 0, color: "#7cd7ff", name: "Monsoon"   },
+    sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
+    mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
+    blizzard:  { level: 0, cd: 2.1,  timer: 0, color: "#b8ecff", name: "Blizzard"  },
+    cataclysm: { level: 0, cd: 2.6,  timer: 0, color: "#f3d2ff", name: "Cataclysm" },
+  };
+}
+
 function makePowerUpgradeChoice(key, descPrefix) {
   return {
     name: `Upgrade ${game.powers[key].name}`,
@@ -1287,10 +1326,28 @@ function makePowerUpgradeChoice(key, descPrefix) {
   };
 }
 
+function makeFusionUpgradeChoice(key, sources) {
+  return {
+    name: `Empower ${capitalize(key)}`,
+    desc: `${sources.map(capitalize).join("+")} levels +1 and ${capitalize(key)} cast speed +6%.`,
+    apply: () => {
+      for (const source of sources) {
+        if (game.powers[source]) game.powers[source].level += 1;
+      }
+      if (game.powers[key]) game.powers[key].cd = Math.max(0.3, game.powers[key].cd * 0.94);
+      feed(`${capitalize(key)} synergy surged.`);
+      setToast(`${capitalize(key)} empowered.`, "good");
+    },
+  };
+}
+
 function generateLevelUpChoices() {
   const choices = [];
+  const fusion = getActiveFusionState();
+  const consumed = fusion.consumed;
 
-  for (const key of getLockedBasePowers()) {
+  const locked = getLockedBasePowers();
+  for (const key of locked) {
     choices.push({
       name: `Learn ${game.powers[key].name}`,
       desc: `${getStartingPowerDesc(key)} Unlock it now and it joins every future volley.`,
@@ -1303,11 +1360,21 @@ function generateLevelUpChoices() {
   }
 
   for (const key of getUnlockedBasePowers()) {
+    if (consumed.has(key)) continue;
     choices.push(makePowerUpgradeChoice(key, `Strengthen one part of your volley.`));
   }
 
+  for (const comboKey of fusion.activeComboKeys) {
+    const sources = fusion.sourcesByKey[comboKey] || [];
+    if (sources.length) choices.push(makeFusionUpgradeChoice(comboKey, sources));
+  }
+
   choices.sort((a, b) => getChoiceDraftWeight(b) - getChoiceDraftWeight(a));
-  return choices.slice(0, 4);
+  const out = choices.slice(0, 4);
+  if (locked.length > 0 && !out.some((c) => c.name.indexOf("Learn ") === 0)) {
+    out[out.length - 1] = choices.find((c) => c.name.indexOf("Learn ") === 0) || out[out.length - 1];
+  }
+  return out;
 }
 
 function openStartingPowerDraft() {
@@ -1375,28 +1442,7 @@ function startGameWithElement(key) {
     r: 14,
   };
 
-  game.powers = {
-    arc:       { level: 1, cd: 0.28, timer: 0, color: "#d6ecff", name: "Arc Bolt", unlocked: false, damageMul: 1.25, pierce: 1 },
-    fire:      { level: 1, cd: 1.0,  timer: 0, color: "#ff8a52", name: "Fire",     unlocked: false, areaMul: 1, burnDamageMul: 1, burnDurationBonus: 0 },
-    earth:     { level: 1, cd: 1.4,  timer: 0, color: "#b7925a", name: "Earth",    unlocked: false, damageMul: 1.22, slowBonus: 0.15, sizeMul: 1.15 },
-    water:     { level: 1, cd: 1.1,  timer: 0, color: "#65b9ff", name: "Water",    unlocked: false, radiusMul: 1.18, healMul: 1.18, damageMul: 1.18 },
-    wind:      { level: 1, cd: 0.95, timer: 0, color: "#bdeeff", name: "Wind",     unlocked: false, widthMul: 1.18, pushMul: 1.18, durationMul: 1.18 },
-    magma:     { level: 0, cd: 2.2,  timer: 0, color: "#ff533d", name: "Magma",    unlocked: false, radiusMul: 1, dpsMul: 1, blastMul: 1 },
-    mist:      { level: 0, cd: 1.55, timer: 0, color: "#aaddcc", name: "Mist"      },
-    storm:     { level: 0, cd: 1.75, timer: 0, color: "#88bbff", name: "Storm"     },
-    chain:     { level: 0, cd: 0.6,  timer: 0, color: "#b8d8ff", name: "Chain Arc" },
-    quicksand: { level: 0, cd: 1.9,  timer: 0, color: "#c8a868", name: "Quicksand" },
-    monsoon:   { level: 0, cd: 2.05, timer: 0, color: "#7cd7ff", name: "Monsoon"   },
-    sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
-    mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
-    blizzard:  { level: 0, cd: 2.1,  timer: 0, color: "#b8ecff", name: "Blizzard"  },
-    cataclysm: { level: 0, cd: 2.6,  timer: 0, color: "#f3d2ff", name: "Cataclysm" },
-    monsoon:   { level: 0, cd: 2.05, timer: 0, color: "#7cd7ff", name: "Monsoon"   },
-    sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
-    mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
-    blizzard:  { level: 0, cd: 2.1,  timer: 0, color: "#b8ecff", name: "Blizzard"  },
-    cataclysm: { level: 0, cd: 2.6,  timer: 0, color: "#f3d2ff", name: "Cataclysm" },
-  };
+  game.powers = createInitialPowers();
 
   unlockPower(key, true);
   game.mode = "running";
@@ -1989,10 +2035,13 @@ function addElementUpgradeChoices(pool, key) {
 
 function generateUpgradeChoices() {
   const pool = [];
+  const fusion = getActiveFusionState();
+  const consumed = fusion.consumed;
 
   const unlockedPowers = powerOrder.filter((key) => game.powers[key].unlocked);
-  if (game.powers.arc.unlocked) addElementUpgradeChoices(pool, "arc");
+  if (game.powers.arc.unlocked && !consumed.has("arc")) addElementUpgradeChoices(pool, "arc");
   for (const key of unlockedPowers) {
+    if (consumed.has(key)) continue;
     pool.push({
       name: `Upgrade ${game.powers[key].name}`,
       desc: `${game.powers[key].name} level +1 (damage/utility scales)`,
@@ -2016,6 +2065,12 @@ function generateUpgradeChoices() {
       },
     });
     addElementUpgradeChoices(pool, "magma");
+  }
+
+  for (const comboKey of fusion.activeComboKeys) {
+    if (comboKey === "magma") continue;
+    const sources = fusion.sourcesByKey[comboKey] || [];
+    if (sources.length) pool.push(makeFusionUpgradeChoice(comboKey, sources));
   }
 
   pool.push({
@@ -2257,6 +2312,70 @@ function updateZones(dt) {
           }
         }
         for (let i = 0; i < 4; i++) spawnSpark(z.x, z.y, "#b8964c", 0.8);
+      }
+    }
+
+    if (z.type === "chainField") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+        }
+      }
+
+      z.linkVisual = Math.max(0, (z.linkVisual || 0) - dt);
+      z.linkTimer = (z.linkTimer || 0) - dt;
+      if (z.linkTimer <= 0) {
+        z.linkTimer += z.linkCd || 0.26;
+        const inRange = game.enemies
+          .filter((e) => Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r)
+          .sort((a, b) => Math.hypot(a.x - z.x, a.y - z.y) - Math.hypot(b.x - z.x, b.y - z.y));
+        z.links = [];
+        if (inRange.length >= 2) {
+          const maxLinks = Math.min(inRange.length - 1, z.maxJumps || 4);
+          for (let i = 0; i < maxLinks; i++) {
+            const a = inRange[i];
+            const b = inRange[i + 1];
+            b.hp -= z.linkDamage;
+            z.links.push([a.x, a.y, b.x, b.y]);
+            for (let j = 0; j < 2; j++) spawnSpark(b.x, b.y, "#c88dff", 0.9);
+          }
+          z.linkVisual = 0.16;
+        }
+      }
+    }
+
+    if (z.type === "plasma") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.burn = Math.max(e.burn, z.burn);
+        }
+      }
+      z.surgeTimer = (z.surgeTimer || 0) - dt;
+      if (z.surgeTimer <= 0) {
+        z.surgeTimer += z.surgeCd || 0.44;
+        explodeAt(z.x, z.y, z.r * 0.5, z.surgeDamage || z.dps * 0.5);
+        for (let i = 0; i < 6; i++) spawnSpark(z.x, z.y, "#ff9ad1", 1.1);
+      }
+    }
+
+    if (z.type === "riptide") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+        }
+      }
+      z.pulseTimer = (z.pulseTimer || 0) - dt;
+      if (z.pulseTimer <= 0) {
+        z.pulseTimer += z.pulseCd || 0.38;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.68 + e.r) {
+            e.hp -= z.pulseDamage || z.dps * 0.45;
+          }
+        }
+        if (game.wall) game.wall.hp = Math.min(game.wall.maxHp, game.wall.hp + (z.healPulse || 2));
+        for (let i = 0; i < 5; i++) spawnSpark(z.x, z.y, "#98d4ff", 1.0);
       }
     }
 
@@ -2870,6 +2989,37 @@ function drawZones() {
         ctx.fillStyle = "rgba(216, 186, 120, 0.24)";
         circle(z.x + Math.cos(a) * rr * 0.35, z.y + Math.sin(a) * rr * 0.35, 2 + i);
       }
+    } else if (z.type === "chainField") {
+      const pulse = 0.78 + Math.sin(game.time * 11) * 0.18;
+      ctx.fillStyle = `rgba(166, 116, 255, ${0.18 * pulse})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(209, 160, 255, 0.7)";
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      if (z.linkVisual > 0 && Array.isArray(z.links)) {
+        for (const link of z.links) {
+          drawZigZagLine(link[0], link[1], link[2], link[3], "rgba(214, 164, 255, 0.85)", 2.1);
+        }
+      }
+    } else if (z.type === "plasma") {
+      const pulse = 0.8 + Math.sin(game.time * 8.3) * 0.16;
+      ctx.fillStyle = `rgba(255, 104, 170, ${0.18 * pulse})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(255, 178, 220, 0.7)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      drawZigZagLine(z.x - z.r * 0.45, z.y + z.r * 0.2, z.x + z.r * 0.45, z.y - z.r * 0.2, "rgba(255, 190, 230, 0.52)", 1.1);
+    } else if (z.type === "riptide") {
+      const pulse = 0.8 + Math.sin(game.time * 7.2) * 0.14;
+      ctx.fillStyle = `rgba(118, 178, 255, ${0.16 * pulse})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(180, 220, 255, 0.62)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(150, 210, 255, 0.4)";
+      ctx.arc(z.x, z.y, z.r * 0.55 + Math.sin(game.time * 4.5) * 2.5, 0, Math.PI * 2);
+      ctx.stroke();
     } else if (z.type === "triad" && z.variant === "monsoon") {
       const pulse = 0.75 + Math.sin(game.time * 9) * 0.2;
       ctx.fillStyle = `rgba(115, 215, 255, ${0.18 * pulse})`;
@@ -2937,6 +3087,8 @@ function getSynergyStateTag(key) {
   if (key === "mist") return "PULSE+HEAL";
   if (key === "storm") return "STRIKE";
   if (key === "chain") return "FORK";
+  if (key === "plasma") return "SURGE";
+  if (key === "riptide") return "FLOW";
   if (key === "quicksand") return "PULL+CRUSH";
   if (key === "magma") return "ERUPT";
   if (key === "monsoon") return "GALE+SURGE";
@@ -2950,7 +3102,9 @@ function getSynergyStateTag(key) {
 function getSynergyTagColors(key) {
   if (key === "mist") return { bg: "rgba(130, 220, 176, 0.2)", line: "rgba(160, 250, 205, 0.6)", text: "#b9ffe0" };
   if (key === "storm") return { bg: "rgba(120, 170, 255, 0.2)", line: "rgba(170, 210, 255, 0.65)", text: "#d8ecff" };
-  if (key === "chain") return { bg: "rgba(160, 210, 255, 0.2)", line: "rgba(195, 235, 255, 0.65)", text: "#e2f6ff" };
+  if (key === "chain") return { bg: "rgba(180, 132, 255, 0.24)", line: "rgba(215, 170, 255, 0.72)", text: "#f0dbff" };
+  if (key === "plasma") return { bg: "rgba(255, 130, 188, 0.24)", line: "rgba(255, 192, 225, 0.72)", text: "#ffe0ef" };
+  if (key === "riptide") return { bg: "rgba(130, 190, 255, 0.22)", line: "rgba(186, 225, 255, 0.68)", text: "#e3f2ff" };
   if (key === "quicksand") return { bg: "rgba(200, 165, 95, 0.24)", line: "rgba(230, 200, 130, 0.65)", text: "#ffe6b8" };
   if (key === "magma") return { bg: "rgba(255, 120, 80, 0.22)", line: "rgba(255, 170, 130, 0.68)", text: "#ffd2bf" };
   if (key === "monsoon") return { bg: "rgba(112, 214, 255, 0.24)", line: "rgba(177, 240, 255, 0.7)", text: "#d2f6ff" };
