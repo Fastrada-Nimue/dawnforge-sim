@@ -449,6 +449,17 @@ function setupInput() {
     input.mouseDown = false;
   });
 
+  canvas.addEventListener("touchmove", (e) => {
+    if (!e.touches || e.touches.length === 0) return;
+    const t = e.touches[0];
+    updatePointerFromClient(t.clientX, t.clientY);
+    if (game.mode === "running") e.preventDefault();
+  }, { passive: false });
+
+  canvas.addEventListener("touchcancel", () => {
+    input.mouseDown = false;
+  });
+
   window.addEventListener("keydown", (e) => {
     void e;
   });
@@ -2289,13 +2300,13 @@ function endGame(victory) {
   updateUi();
 }
 
-function addElementUpgradeChoices(pool, key) {
+function addElementUpgradeChoices(pool, key, elementPool = null) {
   const power = game.powers[key];
   if (!power || !power.unlocked) return;
 
   const levelCdFloor = key === "magma" ? 1.6 : 0.45;
   const push = (choice) => {
-    pool.push({
+    const entry = {
       ...choice,
       desc: `${choice.desc} Also +1 ${power.name} level.`,
       apply: () => {
@@ -2304,7 +2315,9 @@ function addElementUpgradeChoices(pool, key) {
         choice.apply();
         setToast(`${power.name} reached level ${power.level}.`, "good");
       },
-    });
+    };
+    pool.push(entry);
+    if (elementPool) elementPool.push(entry);
   };
 
   if (key === "arc") {
@@ -2618,6 +2631,7 @@ function addElementUpgradeChoices(pool, key) {
 function generateUpgradeChoices() {
   const pool = [];
   const elementUnlockPool = [];
+  const elementUpgradePool = [];
   const specialUnlockPool = [];
   const fusion = getActiveFusionState();
   const consumed = fusion.consumed;
@@ -2800,14 +2814,14 @@ function generateUpgradeChoices() {
   }
 
   const unlockedPowers = powerOrder.filter((key) => game.powers[key].unlocked);
-  if (game.powers.arc.unlocked && !consumed.has("arc")) addElementUpgradeChoices(pool, "arc");
+  if (game.powers.arc.unlocked && !consumed.has("arc")) addElementUpgradeChoices(pool, "arc", elementUpgradePool);
   for (const key of unlockedPowers) {
     if (consumed.has(key)) continue;
-    addElementUpgradeChoices(pool, key);
+    addElementUpgradeChoices(pool, key, elementUpgradePool);
   }
 
   if (game.magmaUnlocked && game.powers.magma.unlocked) {
-    addElementUpgradeChoices(pool, "magma");
+    addElementUpgradeChoices(pool, "magma", elementUpgradePool);
   }
 
   for (const comboKey of fusion.activeComboKeys) {
@@ -2871,12 +2885,20 @@ function generateUpgradeChoices() {
     },
   });
 
-  const out = pickWeightedUnique(pool, 6);
-
+  const reservedElementCards = [];
   if (elementUnlockPool.length > 0) {
-    const elementCards = pickWeightedUnlockCards(elementUnlockPool, Math.min(2, elementUnlockPool.length));
-    for (let i = 0; i < elementCards.length && i < out.length; i++) out[i] = elementCards[i];
+    reservedElementCards.push(...pickWeightedUnlockCards(elementUnlockPool, Math.min(2, elementUnlockPool.length)));
   }
+
+  if (reservedElementCards.length < 2 && elementUpgradePool.length > 0) {
+    const takenNames = new Set(reservedElementCards.map((choice) => choice.name));
+    const elementUpgradeOptions = elementUpgradePool.filter((choice) => !takenNames.has(choice.name));
+    reservedElementCards.push(...pickWeightedUnique(elementUpgradeOptions, 2 - reservedElementCards.length));
+  }
+
+  const reservedNames = new Set(reservedElementCards.map((choice) => choice.name));
+  const nonReservedPool = pool.filter((choice) => !reservedNames.has(choice.name));
+  const out = [...reservedElementCards, ...pickWeightedUnique(nonReservedPool, 6 - reservedElementCards.length)];
 
   if (specialUnlockPool.length > 0 && out.length > 2) {
     const specialUnlock = pickWeightedUnlockCards(specialUnlockPool, 1)[0] || null;
