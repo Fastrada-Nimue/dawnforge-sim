@@ -313,7 +313,7 @@ function openStartingElementOverlay() {
   const choices = ["arc", "fire", "earth", "water", "wind", "nature"].map((key) => ({
     key,
     name: `Start with ${capitalize(key === "arc" ? "arc bolt" : key)}`,
-    desc: getStartingPowerDesc(key),
+    desc: `${getStartingPowerDesc(key)} ${getElementComboHint(key)}`,
   }));
 
   renderChoiceOverlay("Choose Your Starting Power", choices, (choice) => {
@@ -1711,13 +1711,44 @@ function renderChoiceOverlay(title, choices, onPick) {
 }
 
 function getStartingPowerDesc(key) {
-  if (key === "arc") return "Fast direct bolts for reliable single-target pressure.";
-  if (key === "fire") return "Explosive fireballs that burn clustered enemies.";
-  if (key === "earth") return "Heavy stone shots that slow threats before wall contact.";
-  if (key === "water") return "Burst damage with wall healing on every cast.";
-  if (key === "wind") return "A piercing gust lane that damages and pushes enemies back.";
-  if (key === "nature") return "Briar patches that root and punish enemies standing inside.";
+  if (key === "arc") return "Fast single-target bolts.";
+  if (key === "fire") return "Explosive burn shots.";
+  if (key === "earth") return "Heavy slows and impact.";
+  if (key === "water") return "Burst damage plus wall heal.";
+  if (key === "wind") return "Piercing push lane.";
+  if (key === "nature") return "Rooting briar control.";
   return "Unlock this power.";
+}
+
+function summarizeComboKeys(keys, maxItems = 2) {
+  const uniq = [...new Set((keys || []).filter(Boolean))];
+  if (uniq.length === 0) return "none";
+  const shown = uniq.slice(0, maxItems).map((k) => capitalize(k));
+  const extra = uniq.length - shown.length;
+  return extra > 0 ? `${shown.join(", ")} +${extra}` : shown.join(", ");
+}
+
+function getElementComboHint(key) {
+  const unlocked = new Set(getUnlockedBasePowers());
+  unlocked.delete(key);
+
+  const pairKeys = COMBO_DEFS
+    .filter((d) => d.a === key || d.b === key)
+    .map((d) => d.key);
+  if ((key === "fire" || key === "earth") && !pairKeys.includes("magma")) pairKeys.push("magma");
+
+  const immediatePairs = COMBO_DEFS
+    .filter((d) => (d.a === key && unlocked.has(d.b)) || (d.b === key && unlocked.has(d.a)))
+    .map((d) => d.key);
+  if (((key === "fire" && unlocked.has("earth")) || (key === "earth" && unlocked.has("fire"))) && !game.magmaUnlocked) {
+    immediatePairs.push("magma");
+  }
+
+  const triCount = TRIPLE_COMBO_DEFS.filter((d) => d.a === key || d.b === key || d.c === key).length;
+  const apexCount = APEX_COMBO_DEFS.filter((d) => d.a === key || d.b === key || d.c === key || d.d === key).length;
+
+  const nowText = immediatePairs.length > 0 ? `Now: ${summarizeComboKeys(immediatePairs, 2)} | ` : "";
+  return `${nowText}Paths: ${summarizeComboKeys(pairKeys, 2)} | T${triCount} A${apexCount}`;
 }
 
 function unlockPower(key, selectPower = false) {
@@ -2646,7 +2677,7 @@ function generateUpgradeChoices() {
   for (const key of lockedBase) {
     unlockPool.push({
       name: `Learn ${game.powers[key].name}`,
-      desc: `${getStartingPowerDesc(key)} Unlock it now and it joins every future volley.`,
+      desc: `${getStartingPowerDesc(key)} ${getElementComboHint(key)}`,
       unlockType: "element",
       unlockKeys: [key],
       apply: () => {
@@ -2667,7 +2698,7 @@ function generateUpgradeChoices() {
 
     unlockPool.push({
       name: `Awaken ${capitalize(def.key)}`,
-      desc: `${capitalize(def.a)} + ${capitalize(def.b)} fusion unlocked for your volley.`,
+      desc: `${capitalize(def.a)}+${capitalize(def.b)} fusion.`,
       unlockType: "pair",
       unlockKeys: [def.a, def.b],
       apply: () => {
@@ -2690,7 +2721,7 @@ function generateUpgradeChoices() {
 
     unlockPool.push({
       name: `Awaken ${capitalize(def.key)}`,
-      desc: `${capitalize(def.a)} + ${capitalize(def.b)} + ${capitalize(def.c)} triad fusion unlocked.`,
+      desc: `${capitalize(def.a)}+${capitalize(def.b)}+${capitalize(def.c)} triad fusion.`,
       unlockType: "triple",
       unlockKeys: [def.a, def.b, def.c],
       apply: () => {
@@ -2707,7 +2738,7 @@ function generateUpgradeChoices() {
   if (magmaEligible) {
     unlockPool.push({
       name: "Awaken Magma",
-      desc: "Fire + Earth fusion unlocked. Magma joins your full attack volley.",
+      desc: "Fire+Earth fusion.",
       unlockType: "pair",
       unlockKeys: ["fire", "earth"],
       apply: () => {
