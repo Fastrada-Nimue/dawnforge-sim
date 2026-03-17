@@ -1634,12 +1634,12 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       x: aimed.x,
       y: aimed.y,
       r: (52 + p.level * 8) * p.radiusMul,
-      dps: (18 + p.level * 7) * game.globalDamageMul * p.damageMul,
+      dps: (22 + p.level * 7.8) * game.globalDamageMul * p.damageMul,
       slow: 0.5,
       snare: 0.82 + p.snareBonus,
       pulseCd: 0.48,
       pulseTimer: 0.48,
-      pulseDamage: (12 + p.level * 4.2) * game.globalDamageMul * p.damageMul,
+      pulseDamage: (15 + p.level * 4.8) * game.globalDamageMul * p.damageMul,
       life: 1.55 * p.durationMul,
     });
     spawnCastPulse(aimed.x, aimed.y, "rgba(178, 236, 156, 0.78)", Math.max(46, (52 + p.level * 8) * p.radiusMul * 0.9), 0.28);
@@ -3939,16 +3939,79 @@ function getNextPowerHint() {
 function drawWall() {
   if (!game.wall) return;
   const w = game.wall;
+  const ratio = Math.max(0, w.hp / w.maxHp);
 
-  ctx.fillStyle = "#6b5848";
+  // Rear battlement silhouette for depth
+  ctx.fillStyle = "#4f4137";
+  ctx.fillRect(w.x - 8, w.y - 9, w.w + 16, 10);
+  for (let i = 0; i < 8; i++) {
+    const bx = w.x + 8 + i * (w.w - 16) / 7;
+    ctx.fillRect(bx - 6, w.y - 15, 12, 7);
+  }
+
+  // Main wall body gradient
+  const wallGrad = ctx.createLinearGradient(w.x, w.y, w.x, w.y + w.h);
+  wallGrad.addColorStop(0, "#7a6450");
+  wallGrad.addColorStop(1, "#564536");
+  ctx.fillStyle = wallGrad;
   ctx.fillRect(w.x, w.y, w.w, w.h);
-  ctx.strokeStyle = "#8f7762";
+
+  // Front lip for layered profile
+  ctx.fillStyle = "rgba(40, 28, 22, 0.35)";
+  ctx.fillRect(w.x, w.y + w.h * 0.62, w.w, w.h * 0.38);
+
+  // Masonry joints
+  ctx.strokeStyle = "rgba(42, 28, 22, 0.32)";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 9; i++) {
+    const xx = w.x + i * (w.w / 9);
+    ctx.beginPath();
+    ctx.moveTo(xx, w.y + 1);
+    ctx.lineTo(xx, w.y + w.h - 1);
+    ctx.stroke();
+  }
+
+  // Rune sockets that react to selected cast
+  const selected = game.selectedCastKey;
+  let runeColor = "rgba(170, 214, 255, 0.55)";
+  if (selected && game.powers && game.powers[selected] && game.powers[selected].color) {
+    runeColor = game.powers[selected].color;
+  }
+  for (let i = 0; i < 3; i++) {
+    const rx = w.x + w.w * (0.2 + i * 0.3);
+    const ry = w.y + w.h * 0.48;
+    const pulse = 0.62 + Math.sin(game.time * 4 + i * 1.7) * 0.2;
+    ctx.fillStyle = "rgba(24, 20, 18, 0.55)";
+    circle(rx, ry, 7.4);
+    ctx.globalAlpha = Math.max(0.24, pulse);
+    ctx.strokeStyle = runeColor;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(rx, ry, 4.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Damage-state cracks and chips
+  if (ratio < 0.72) {
+    const severity = Math.min(1, (0.72 - ratio) / 0.72);
+    const crackCount = 2 + Math.floor(severity * 6);
+    for (let i = 0; i < crackCount; i++) {
+      const sx = w.x + 16 + (i * 73) % Math.max(24, w.w - 28);
+      const sy = w.y + 3 + (i * 11) % Math.max(12, w.h - 8);
+      const ex = sx + ((i % 2 === 0 ? -1 : 1) * (9 + severity * 13));
+      const ey = sy + 8 + severity * 8;
+      drawZigZagLine(sx, sy, ex, ey, "rgba(38, 22, 20, 0.55)", 1.2);
+    }
+  }
+
+  ctx.strokeStyle = "#9a8168";
   ctx.lineWidth = 2;
   ctx.strokeRect(w.x, w.y, w.w, w.h);
 
+  // HP bar
   ctx.fillStyle = "#2a1a18";
   ctx.fillRect(w.x, w.y - 12, w.w, 7);
-  const ratio = Math.max(0, w.hp / w.maxHp);
   ctx.fillStyle = ratio > 0.45 ? "#7ce08a" : ratio > 0.2 ? "#f0c665" : "#ef6f6f";
   ctx.fillRect(w.x, w.y - 12, w.w * ratio, 7);
 }
@@ -3956,12 +4019,53 @@ function drawWall() {
 function drawHero() {
   if (!game.hero) return;
   const h = game.hero;
+  const selected = game.selectedCastKey;
+  const auraColor = selected && game.powers && game.powers[selected] ? game.powers[selected].color : "#8fdcff";
+  const idleBob = Math.sin(game.time * 2.6) * 1.6;
+  const castPulse = 0.75 + Math.sin(game.time * 5.4) * 0.18;
 
-  ctx.fillStyle = "#9edcff";
-  circle(h.x, h.y, h.r);
+  // Ground contact shadow anchors the hero to lane
+  ctx.fillStyle = "rgba(10, 8, 12, 0.32)";
+  ctx.beginPath();
+  ctx.ellipse(h.x, h.y + h.r + 8, h.r * 1.05, h.r * 0.38, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-  ctx.fillStyle = "rgba(140, 220, 255, 0.25)";
-  circle(h.x, h.y, h.r + 7);
+  // Outer aura ring reacts to selected cast key
+  ctx.globalAlpha = 0.28;
+  ctx.strokeStyle = auraColor;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(h.x, h.y + idleBob * 0.3, h.r + 7 + castPulse * 2.1, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Main body with gradient for rounded look
+  const g = ctx.createRadialGradient(h.x - 3, h.y - 4 + idleBob, 2, h.x, h.y + idleBob, h.r + 2);
+  g.addColorStop(0, "#d6f4ff");
+  g.addColorStop(1, "#70b7d9");
+  ctx.fillStyle = g;
+  circle(h.x, h.y + idleBob, h.r);
+
+  // Rim + face core
+  ctx.strokeStyle = "rgba(230, 247, 255, 0.58)";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(h.x, h.y + idleBob, h.r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(210, 246, 255, 0.5)";
+  circle(h.x - 3.5, h.y - 3 + idleBob, Math.max(2.2, h.r * 0.24));
+
+  // Orbiting micro runes hint current power state
+  for (let i = 0; i < 2; i++) {
+    const a = game.time * 1.9 + i * Math.PI;
+    const rx = h.x + Math.cos(a) * (h.r + 5.5);
+    const ry = h.y + idleBob + Math.sin(a) * (h.r * 0.42);
+    ctx.fillStyle = auraColor;
+    ctx.globalAlpha = 0.62;
+    circle(rx, ry, 1.6);
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawEnemies() {
@@ -3977,8 +4081,52 @@ function drawEnemies() {
       e.lastRenderHp = e.hp;
     }
 
-    ctx.fillStyle = e.color;
-    circle(e.x, e.y, e.r);
+    // Per-type silhouette for faster read: runner diamond, brute hex, boss crown ring, grunt round.
+    if (e.type === "runner") {
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y - e.r);
+      ctx.lineTo(e.x + e.r * 0.9, e.y);
+      ctx.lineTo(e.x, e.y + e.r);
+      ctx.lineTo(e.x - e.r * 0.9, e.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(240, 255, 255, 0.34)";
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+    } else if (e.type === "brute") {
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = i * (Math.PI / 3) + Math.PI / 6;
+        const px = e.x + Math.cos(a) * e.r;
+        const py = e.y + Math.sin(a) * e.r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255, 229, 210, 0.35)";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    } else if (e.type === "boss") {
+      ctx.fillStyle = e.color;
+      circle(e.x, e.y, e.r);
+      ctx.strokeStyle = "rgba(255, 242, 214, 0.52)";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 4 + Math.sin(game.time * 3.2) * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = e.color;
+      circle(e.x, e.y, e.r);
+    }
+
+    // Core and shadow make enemies feel less flat.
+    ctx.fillStyle = "rgba(20, 12, 12, 0.2)";
+    circle(e.x + 2, e.y + 2, Math.max(2.6, e.r * 0.56));
+    ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
+    circle(e.x - e.r * 0.28, e.y - e.r * 0.24, Math.max(2.2, e.r * 0.28));
 
     if ((e.hitFlash || 0) > 0) {
       ctx.globalAlpha = Math.min(0.85, e.hitFlash * 2.6);
