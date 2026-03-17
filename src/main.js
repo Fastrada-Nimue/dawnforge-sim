@@ -36,6 +36,8 @@ const BOSS_WARNING_SECONDS = 4;
 const MAX_SPARKS = 900;
 const MAX_PROJECTILES = 700;
 const MAX_ZONES = 220;
+const MAX_CAST_PULSES = 48;
+const AMBIENT_MOTE_COUNT = 56;
 const LANE_SIDE_MARGIN = 110;
 const SAVE_KEY = "dawnforge.walldef.v1";
 
@@ -219,6 +221,10 @@ const game = {
   targetStartWave: null, // For jumping to any wave (regular or boss)
   selectedCastKey: null,
   apexFusionUnlocked: false,
+  screenShake: 0,
+  screenShakeMag: 0,
+  castPulses: [],
+  ambientMotes: [],
   meta: loadMeta(),
 };
 setupInput();
@@ -410,6 +416,8 @@ function startGame() {
   game.projectiles = [];
   game.zones = [];
   game.sparks = [];
+  game.castPulses = [];
+  game.ambientMotes = [];
   game.kills = 0;
   game.runEssence = 0;
   game.globalDamageMul = (1 + game.meta.defeatUpgrades.damageBoost * 0.1) * (1 + carry.damageBoostPct);
@@ -425,6 +433,8 @@ function startGame() {
   game.time = 0;
   game.selectedCastKey = null;
   game.apexFusionUnlocked = false;
+  game.screenShake = 0;
+  game.screenShakeMag = 0;
 
   game.wall = {
     x: WIDTH * 0.5 - 190,
@@ -512,6 +522,9 @@ function spawnBossEnemy() {
     atkCd: 0,
     color: profile.color,
     enraged: false,
+    hitFlash: 0,
+    critFlash: 0,
+    lastRenderHp: 0,
     burn: 0, slow: 0, stun: 0, snare: 0,
   });
   game.bossSpawnedThisWave = true;
@@ -566,6 +579,9 @@ function update(dt) {
   if (game.mode !== "running") return;
 
   game.time += dt;
+  game.screenShake = Math.max(0, game.screenShake - dt);
+  updateCastPulses(dt);
+  updateAmbientMotes(dt);
 
   for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "plasma", "riptide", "quicksand", "monsoon", "sandglass", "mudflow", "blizzard", "cataclysm"]) {
     if (!game.powers[key]) continue;
@@ -647,6 +663,9 @@ function spawnEnemy() {
           damage: (14 + game.wave * 1.4) * (1 - earlyEase * 0.12),
           atkCd: 0,
           color: "#9ae2ff",
+          hitFlash: 0,
+          critFlash: 0,
+          lastRenderHp: 0,
           burn: 0, slow: 0, stun: 0, snare: 0,
         }
       : type === "brute"
@@ -661,6 +680,9 @@ function spawnEnemy() {
           damage: (38 + game.wave * 3) * (1 - earlyEase * 0.08),
           atkCd: 0,
           color: "#de9467",
+          hitFlash: 0,
+          critFlash: 0,
+          lastRenderHp: 0,
           burn: 0, slow: 0, stun: 0, snare: 0,
         }
       : {
@@ -674,6 +696,9 @@ function spawnEnemy() {
           damage: (20 + game.wave * 2) * (1 - earlyEase * 0.14),
           atkCd: 0,
           color: "#e17f7f",
+          hitFlash: 0,
+          critFlash: 0,
+          lastRenderHp: 0,
           burn: 0, slow: 0, stun: 0, snare: 0,
         };
 
@@ -727,6 +752,8 @@ function updateEnemies(dt) {
     }
 
     if (e.slow > 0) e.slow -= dt;
+    e.hitFlash = Math.max(0, (e.hitFlash || 0) - dt * 4.8);
+    e.critFlash = Math.max(0, (e.critFlash || 0) - dt * 5.4);
   }
 
   const defeated = game.enemies.filter((e) => e.hp <= 0);
@@ -864,6 +891,53 @@ function updateSparks(dt) {
   game.sparks = game.sparks.filter((s) => s.life > 0);
 }
 
+function triggerScreenShake(duration, magnitude) {
+  game.screenShake = Math.max(game.screenShake || 0, duration);
+  game.screenShakeMag = Math.max(game.screenShakeMag || 0, magnitude);
+}
+
+function spawnCastPulse(x, y, color, radius, life = 0.32) {
+  if (!Array.isArray(game.castPulses)) game.castPulses = [];
+  if (game.castPulses.length >= MAX_CAST_PULSES) game.castPulses.shift();
+  game.castPulses.push({ x, y, color, radius, life, maxLife: life });
+}
+
+function updateCastPulses(dt) {
+  if (!Array.isArray(game.castPulses)) game.castPulses = [];
+  for (const p of game.castPulses) p.life -= dt;
+  game.castPulses = game.castPulses.filter((p) => p.life > 0);
+}
+
+function ensureAmbientMotes() {
+  if (!Array.isArray(game.ambientMotes)) game.ambientMotes = [];
+  if (game.ambientMotes.length >= AMBIENT_MOTE_COUNT) return;
+  for (let i = game.ambientMotes.length; i < AMBIENT_MOTE_COUNT; i++) {
+    game.ambientMotes.push({
+      x: Math.random() * WIDTH,
+      y: Math.random() * HEIGHT,
+      z: 0.45 + Math.random() * 1.1,
+      vx: -8 + Math.random() * 16,
+      vy: 6 + Math.random() * 18,
+      r: 1 + Math.random() * 2.2,
+      hue: Math.random() > 0.5 ? "255,168,120" : "126,188,255",
+    });
+  }
+}
+
+function updateAmbientMotes(dt) {
+  ensureAmbientMotes();
+  for (const m of game.ambientMotes) {
+    m.x += m.vx * m.z * dt;
+    m.y += m.vy * m.z * dt;
+    if (m.y > HEIGHT + 24) {
+      m.y = -16;
+      m.x = Math.random() * WIDTH;
+    }
+    if (m.x < -20) m.x = WIDTH + 10;
+    if (m.x > WIDTH + 20) m.x = -10;
+  }
+}
+
 function castSelectedPower(tx, ty) {
   const volleyPowers = getUnlockedVolleyPowers();
   if (volleyPowers.length === 0) return;
@@ -976,6 +1050,8 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       burn: 1.05 + lv * 0.08,
       life: 2.8,
     });
+    spawnCastPulse(aimed.x, aimed.y, "rgba(233, 185, 255, 0.95)", 124, 0.44);
+    triggerScreenShake(0.18, 4.6);
     return true;
   }
 
@@ -1005,6 +1081,8 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         strikeDamage: (18 + lAvg * 5.5) * game.globalDamageMul,
         life: 2.2,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(166, 235, 255, 0.88)", 94, 0.36);
+      triggerScreenShake(0.09, 2.1);
     } else if (key === "sandglass") {
       game.zones.push({
         type: "triad",
@@ -1019,6 +1097,8 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         slashDamage: (20 + lAvg * 5) * game.globalDamageMul,
         life: 2.3,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(255, 207, 148, 0.88)", 88, 0.35);
+      triggerScreenShake(0.1, 2.25);
     } else if (key === "mudflow") {
       game.zones.push({
         type: "triad",
@@ -1033,6 +1113,8 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         pulseDamage: (21 + lAvg * 5.3) * game.globalDamageMul,
         life: 2.45,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(245, 164, 124, 0.85)", 92, 0.36);
+      triggerScreenShake(0.1, 2.2);
     } else if (key === "blizzard") {
       game.zones.push({
         type: "triad",
@@ -1047,6 +1129,8 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         burstDamage: (16 + lAvg * 4.8) * game.globalDamageMul,
         life: 2.35,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(197, 236, 255, 0.9)", 92, 0.36);
+      triggerScreenShake(0.1, 2.2);
     }
     return true;
   }
@@ -1076,6 +1160,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         pulseHeal: 2 + lAvg * 0.7,
         life: 1.9,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(166, 229, 195, 0.78)", 78, 0.3);
     } else if (key === "storm") {
       if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
@@ -1090,6 +1175,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         strikeDamage: (18 + lAvg * 5) * game.globalDamageMul,
         life: 1.6,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(170, 210, 255, 0.78)", 84, 0.32);
     } else if (key === "chain") {
       if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
@@ -1105,6 +1191,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         linkVisual: 0,
         life: 1.85,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(214, 164, 255, 0.82)", 86, 0.32);
     } else if (key === "plasma") {
       if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
@@ -1118,6 +1205,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         surgeDamage: (18 + lAvg * 4.8) * game.globalDamageMul,
         life: 2.0,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(255, 174, 216, 0.84)", 82, 0.32);
     } else if (key === "riptide") {
       if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
@@ -1132,6 +1220,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         healPulse: 2.2 + lAvg * 0.7,
         life: 2.05,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(176, 218, 255, 0.84)", 84, 0.32);
     } else if (key === "quicksand") {
       if (game.zones.length >= MAX_ZONES) game.zones.shift();
       game.zones.push({
@@ -1147,6 +1236,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
         crushDamage: (12 + lAvg * 3) * game.globalDamageMul,
         life: 2.4,
       });
+      spawnCastPulse(aimed.x, aimed.y, "rgba(223, 188, 124, 0.8)", 80, 0.32);
     }
     return true;
   }
@@ -1215,6 +1305,7 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
     const heal = (12 + p.level * 7) * p.healMul;
     if (game.zones.length >= MAX_ZONES) game.zones.shift();
     game.zones.push({ type: "waterBurst", x: aimed.x, y: aimed.y, r, damage: dmg, heal, life: 0.32, applied: false });
+    spawnCastPulse(aimed.x, aimed.y, "rgba(159, 212, 255, 0.72)", Math.max(48, r * 0.82), 0.24);
     return true;
   }
 
@@ -1249,6 +1340,8 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       life: 3.6,
     });
     explodeAt(aimed.x, aimed.y, (62 + p.level * 14) * p.radiusMul, (46 + p.level * 14) * p.blastMul);
+    spawnCastPulse(aimed.x, aimed.y, "rgba(255, 179, 120, 0.95)", 108, 0.42);
+    triggerScreenShake(0.16, 3.8);
     for (let i = 0; i < 14; i++) spawnSpark(aimed.x, aimed.y, i % 2 === 0 ? "#ff7c40" : "#ffcf87", 2.3);
     for (let i = 0; i < 6; i++) spawnSpark(aimed.x, aimed.y, "#5e2f1c", 1.2);
     return true;
@@ -1465,6 +1558,8 @@ function startGameWithElement(key) {
   game.projectiles = [];
   game.zones = [];
   game.sparks = [];
+  game.castPulses = [];
+  game.ambientMotes = [];
   game.kills = 0;
   game.runEssence = 0;
   game.globalDamageMul = (1 + game.meta.defeatUpgrades.damageBoost * 0.1) * (1 + carry.damageBoostPct);
@@ -1480,6 +1575,8 @@ function startGameWithElement(key) {
   game.time = 0;
   game.selectedCastKey = key;
   game.apexFusionUnlocked = false;
+  game.screenShake = 0;
+  game.screenShakeMag = 0;
 
   game.wall = {
     x: WIDTH * 0.5 - 190,
@@ -2834,6 +2931,13 @@ function render() {
     drawStartScreen();
     return;
   }
+  const shaking = (game.screenShake || 0) > 0;
+  const shakeMag = (game.screenShakeMag || 0) * Math.min(1, (game.screenShake || 0) * 11);
+  const sx = shaking ? (Math.random() * 2 - 1) * shakeMag : 0;
+  const sy = shaking ? (Math.random() * 2 - 1) * shakeMag : 0;
+
+  ctx.save();
+  if (shaking) ctx.translate(sx, sy);
   drawBackground();
   drawXpHud();
   drawWall();
@@ -2842,8 +2946,10 @@ function render() {
   drawProjectiles();
   drawEnemies();
   drawSparks();
+  drawCastPulses();
   drawPowerBar();
   drawBossCountdown();
+  ctx.restore();
 }
 
 function drawBossCountdown() {
@@ -2862,22 +2968,42 @@ function drawBossCountdown() {
 }
 
 function drawBackground() {
+  ensureAmbientMotes();
+
   const g = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-  g.addColorStop(0, "#1a1012");
-  g.addColorStop(1, "#0f141c");
+  g.addColorStop(0, "#211116");
+  g.addColorStop(0.45, "#121a27");
+  g.addColorStop(1, "#0b1119");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  ctx.strokeStyle = "rgba(180, 170, 165, 0.08)";
+  const laneGlow = ctx.createRadialGradient(WIDTH * 0.5, HEIGHT * 0.38, 40, WIDTH * 0.5, HEIGHT * 0.38, WIDTH * 0.55);
+  laneGlow.addColorStop(0, "rgba(88, 130, 198, 0.12)");
+  laneGlow.addColorStop(1, "rgba(88, 130, 198, 0)");
+  ctx.fillStyle = laneGlow;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  ctx.strokeStyle = "rgba(184, 172, 160, 0.065)";
   for (let y = 0; y < HEIGHT; y += 28) {
     ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(WIDTH, y);
+    ctx.moveTo(0, y + Math.sin(game.time * 0.35 + y * 0.05) * 1.2);
+    ctx.lineTo(WIDTH, y + Math.sin(game.time * 0.35 + y * 0.05) * 1.2);
     ctx.stroke();
   }
 
-  ctx.fillStyle = "rgba(255, 70, 60, 0.1)";
-  ctx.fillRect(0, 0, WIDTH, 36);
+  for (const m of game.ambientMotes) {
+    ctx.fillStyle = `rgba(${m.hue}, ${0.08 + m.z * 0.12})`;
+    circle(m.x, m.y, m.r * m.z);
+  }
+
+  ctx.fillStyle = "rgba(255, 98, 72, 0.09)";
+  ctx.fillRect(0, 0, WIDTH, 34);
+
+  const vignette = ctx.createRadialGradient(WIDTH * 0.5, HEIGHT * 0.52, WIDTH * 0.22, WIDTH * 0.5, HEIGHT * 0.52, WIDTH * 0.72);
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.2)");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
 }
 
 function drawXpHud() {
@@ -2945,8 +3071,35 @@ function drawHero() {
 
 function drawEnemies() {
   for (const e of game.enemies) {
+    if (!Number.isFinite(e.lastRenderHp) || e.lastRenderHp <= 0) e.lastRenderHp = e.hp;
+    const delta = Math.max(0, e.lastRenderHp - e.hp);
+    if (delta > 0.4) {
+      e.hitFlash = Math.min(0.26, Math.max(e.hitFlash || 0, 0.05 + delta / Math.max(220, e.maxHp * 0.9)));
+      if (delta > Math.max(18, e.maxHp * 0.16)) {
+        e.critFlash = Math.min(0.32, Math.max(e.critFlash || 0, 0.16));
+        if (Math.random() > 0.4) spawnSpark(e.x, e.y, "#fff3ba", 1.1);
+      }
+      e.lastRenderHp = e.hp;
+    }
+
     ctx.fillStyle = e.color;
     circle(e.x, e.y, e.r);
+
+    if ((e.hitFlash || 0) > 0) {
+      ctx.globalAlpha = Math.min(0.85, e.hitFlash * 2.6);
+      ctx.fillStyle = "#ffe8d4";
+      circle(e.x, e.y, e.r + 1.4);
+      ctx.globalAlpha = 1;
+    }
+    if ((e.critFlash || 0) > 0) {
+      ctx.globalAlpha = Math.min(0.8, e.critFlash * 2.2);
+      ctx.strokeStyle = "#fff6cc";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
 
     const r = Math.max(0, e.hp / e.maxHp);
     ctx.fillStyle = "#2d1010";
@@ -3154,6 +3307,21 @@ function drawSparks() {
   }
 }
 
+function drawCastPulses() {
+  if (!Array.isArray(game.castPulses)) return;
+  for (const p of game.castPulses) {
+    const t = Math.max(0, p.life / p.maxLife);
+    const r = p.radius * (1.1 - t * 0.35);
+    ctx.globalAlpha = Math.min(1, 0.36 * t);
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = 2 + (1 - t) * 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
 function getSynergyStateTag(key) {
   if (key === "mist") return "PULSE+HEAL";
   if (key === "storm") return "STRIKE";
@@ -3260,15 +3428,31 @@ function drawPowerBar() {
       displayLevel = Math.floor(total / comboSources.length);
     }
 
-    // Box
-    ctx.fillStyle = isActive && isCombo ? "#14202e" : isActive ? "#2a251a" : isConsumed ? "#181e26" : "#1d222d";
+    // Rune tile background + frame
+    const tileGrad = ctx.createLinearGradient(x, y, x, y + BOX_H);
+    if (isActive && isCombo) {
+      tileGrad.addColorStop(0, "#112735");
+      tileGrad.addColorStop(1, "#0a1521");
+    } else if (isActive) {
+      tileGrad.addColorStop(0, "#2b2217");
+      tileGrad.addColorStop(1, "#16131d");
+    } else {
+      tileGrad.addColorStop(0, "#1b2432");
+      tileGrad.addColorStop(1, "#111722");
+    }
+    ctx.fillStyle = tileGrad;
     ctx.fillRect(x, y, BOX_W, BOX_H);
+
     ctx.lineWidth = isActive && isCombo ? 2 : 1;
     ctx.strokeStyle = isActive && isCombo ? "#7ae8d8"
       : isActive ? "#ffd285"
       : isConsumed ? "#7ae8d855"
       : "#41506a";
     ctx.strokeRect(x, y, BOX_W, BOX_H);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 2, y + 2, BOX_W - 4, BOX_H - 4);
 
     if (game.selectedCastKey === key && p.unlocked) {
       ctx.strokeStyle = "#7ee89f";
@@ -3278,7 +3462,7 @@ function drawPowerBar() {
 
     // Name + Level
     ctx.fillStyle = isConsumed ? "#7ae8d888" : isActive ? p.color : "#6f7a8a";
-    ctx.font = "bold 11px Trebuchet MS";
+    ctx.font = "bold 10px Trebuchet MS";
     const lvSuffix = isActive ? ` Lv.${displayLevel}` : p.unlocked ? ` Lv.${displayLevel}` : " Locked";
     ctx.fillText(p.name + lvSuffix, x + 6, y + 14);
 
@@ -3315,7 +3499,7 @@ function drawPowerBar() {
       }
     }
 
-    // CD bar
+    // CD bar + radial rune cooldown
     const cooldownRef = isCombo ? game.powers[key].cd : p.cd;
     const cdRatio = isActive && cooldownRef > 0
       ? 1 - game.powers[key].timer / (cooldownRef * (game.cooldownMul || 1)) : 0;
@@ -3323,6 +3507,25 @@ function drawPowerBar() {
     ctx.fillRect(x + 6, y + 32, BOX_W - 12, 7);
     ctx.fillStyle = !isActive ? "#4d5766" : game.powers[key].timer <= 0 ? "#7ee89f" : "#8cb7ff";
     ctx.fillRect(x + 6, y + 32, (BOX_W - 12) * Math.max(0, Math.min(1, cdRatio)), 7);
+
+    const rx = x + BOX_W - 12;
+    const ry = y + 22;
+    ctx.fillStyle = "rgba(8, 15, 25, 0.9)";
+    circle(rx, ry, 8.5);
+    ctx.strokeStyle = "rgba(190, 210, 240, 0.35)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(rx, ry, 8.5, 0, Math.PI * 2);
+    ctx.stroke();
+    if (isActive) {
+      const clamped = Math.max(0, Math.min(1, cdRatio));
+      ctx.fillStyle = game.powers[key].timer <= 0 ? "rgba(126, 232, 159, 0.92)" : "rgba(148, 183, 255, 0.88)";
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.arc(rx, ry, 7.2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamped);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     powerBarBoxes.push({
       key,
