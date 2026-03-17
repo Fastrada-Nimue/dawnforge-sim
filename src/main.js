@@ -2562,11 +2562,67 @@ function generateUpgradeChoices() {
   const fusion = getActiveFusionState();
   const consumed = fusion.consumed;
 
+  const getSourcesForPowerKey = (key) => {
+    if (!key) return [];
+    if (basePowerOrder.includes(key)) return [key];
+    if (key === "magma") return ["fire", "earth"];
+    const pairDef = COMBO_DEFS.find((d) => d.key === key);
+    if (pairDef) return [pairDef.a, pairDef.b];
+    const triadDef = TRIPLE_COMBO_DEFS.find((d) => d.key === key);
+    if (triadDef) return [triadDef.a, triadDef.b, triadDef.c];
+    const apexDef = getApexDef(key);
+    if (apexDef) return [apexDef.a, apexDef.b, apexDef.c, apexDef.d];
+    return [];
+  };
+
+  const pickWeightedUnlockCards = (cards, count) => {
+    const poolCards = [...cards];
+    const picked = [];
+    const selectedSources = getSourcesForPowerKey(game.selectedCastKey);
+
+    const weightFor = (card) => {
+      const keys = Array.isArray(card.unlockKeys) ? card.unlockKeys : [];
+      let weight = 1;
+
+      for (const k of keys) {
+        weight += (getElementDraftWeight(k) - 1) * 0.9;
+      }
+
+      if (keys.length > 0 && selectedSources.length > 0) {
+        const overlap = keys.filter((k) => selectedSources.includes(k)).length;
+        weight += overlap * 1.2;
+      }
+
+      if (card.unlockType === "triple") weight += 0.4;
+      if (card.unlockType === "pair") weight += 0.25;
+
+      return Math.max(1, Math.min(14, weight));
+    };
+
+    while (picked.length < count && poolCards.length) {
+      let total = 0;
+      for (const c of poolCards) total += weightFor(c);
+
+      let roll = Math.random() * total;
+      let idx = 0;
+      for (; idx < poolCards.length; idx++) {
+        roll -= weightFor(poolCards[idx]);
+        if (roll <= 0) break;
+      }
+      if (idx >= poolCards.length) idx = poolCards.length - 1;
+      picked.push(poolCards.splice(idx, 1)[0]);
+    }
+
+    return picked;
+  };
+
   const lockedBase = getLockedBasePowers();
   for (const key of lockedBase) {
     unlockPool.push({
       name: `Learn ${game.powers[key].name}`,
       desc: `${getStartingPowerDesc(key)} Unlock it now and it joins every future volley.`,
+      unlockType: "element",
+      unlockKeys: [key],
       apply: () => {
         unlockPower(key, false);
         feed(`${game.powers[key].name} learned at wave ${game.wave}.`);
@@ -2585,6 +2641,8 @@ function generateUpgradeChoices() {
     unlockPool.push({
       name: `Awaken ${capitalize(def.key)}`,
       desc: `${capitalize(def.a)} + ${capitalize(def.b)} fusion unlocked for your volley.`,
+      unlockType: "pair",
+      unlockKeys: [def.a, def.b],
       apply: () => {
         game.pairFusionUnlocked[def.key] = true;
         game.selectedCastKey = def.key;
@@ -2605,6 +2663,8 @@ function generateUpgradeChoices() {
     unlockPool.push({
       name: `Awaken ${capitalize(def.key)}`,
       desc: `${capitalize(def.a)} + ${capitalize(def.b)} + ${capitalize(def.c)} triad fusion unlocked.`,
+      unlockType: "triple",
+      unlockKeys: [def.a, def.b, def.c],
       apply: () => {
         game.tripleFusionUnlocked[def.key] = true;
         game.selectedCastKey = def.key;
@@ -2619,6 +2679,8 @@ function generateUpgradeChoices() {
     unlockPool.push({
       name: "Awaken Magma",
       desc: "Fire + Earth fusion unlocked. Magma joins your full attack volley.",
+      unlockType: "pair",
+      unlockKeys: ["fire", "earth"],
       apply: () => {
         game.magmaUnlocked = true;
         game.powers.magma.level = 1;
@@ -2704,7 +2766,7 @@ function generateUpgradeChoices() {
   const out = pickWeightedUnique(pool, 4);
 
   if (unlockPool.length > 0) {
-    const unlockCards = pickWeightedUnique(unlockPool, Math.min(2, unlockPool.length));
+    const unlockCards = pickWeightedUnlockCards(unlockPool, Math.min(2, unlockPool.length));
     for (let i = 0; i < unlockCards.length && i < out.length; i++) out[i] = unlockCards[i];
   }
 
