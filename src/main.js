@@ -36,7 +36,15 @@ const BOSS_WARNING_SECONDS = 4;
 const MAX_SPARKS = 900;
 const MAX_PROJECTILES = 700;
 const MAX_ZONES = 220;
+const LANE_SIDE_MARGIN = 110;
 const SAVE_KEY = "dawnforge.walldef.v1";
+
+function getLaneBounds(radius = 0) {
+  return {
+    left: LANE_SIDE_MARGIN + radius,
+    right: WIDTH - LANE_SIDE_MARGIN - radius,
+  };
+}
 
 const runtimeState = {
   fatalError: false,
@@ -609,11 +617,15 @@ function spawnEnemy() {
 
   const scale = (1 + Math.max(0, game.wave - 1) * 0.1) * (1 - earlyEase * 0.08);
 
+  const runnerBounds = getLaneBounds(13);
+  const bruteBounds = getLaneBounds(20);
+  const gruntBounds = getLaneBounds(15);
+
   const enemy =
     type === "runner"
       ? {
           type,
-          x: 40 + Math.random() * (WIDTH - 80),
+          x: runnerBounds.left + Math.random() * Math.max(1, runnerBounds.right - runnerBounds.left),
           y: -38,
           r: 13,
           hp: 54 * scale,
@@ -627,7 +639,7 @@ function spawnEnemy() {
       : type === "brute"
       ? {
           type,
-          x: 50 + Math.random() * (WIDTH - 100),
+          x: bruteBounds.left + Math.random() * Math.max(1, bruteBounds.right - bruteBounds.left),
           y: -34,
           r: 20,
           hp: 190 * scale,
@@ -640,7 +652,7 @@ function spawnEnemy() {
         }
       : {
           type,
-          x: 45 + Math.random() * (WIDTH - 90),
+          x: gruntBounds.left + Math.random() * Math.max(1, gruntBounds.right - gruntBounds.left),
           y: -36,
           r: 15,
           hp: 88 * scale,
@@ -657,6 +669,10 @@ function spawnEnemy() {
 
 function updateEnemies(dt) {
   for (const e of game.enemies) {
+    const lane = getLaneBounds(e.r || 0);
+    if (e.x < lane.left) e.x = lane.left;
+    if (e.x > lane.right) e.x = lane.right;
+
     if (e.type === "boss" && !e.enraged && e.maxHp > 0 && e.hp / e.maxHp <= 0.45) {
       e.enraged = true;
       e.speed *= 1.16;
@@ -890,8 +906,10 @@ function getOffsetTarget(tx, ty, angleOffset) {
   const baseAngle = Math.atan2(ty - game.hero.y, tx - game.hero.x);
   const dist = Math.max(24, Math.hypot(tx - game.hero.x, ty - game.hero.y));
   const ang = baseAngle + angleOffset;
+  const lane = getLaneBounds(0);
+  const targetX = Math.max(lane.left, Math.min(lane.right, game.hero.x + Math.cos(ang) * dist));
   return {
-    x: game.hero.x + Math.cos(ang) * dist,
+    x: targetX,
     y: game.hero.y + Math.sin(ang) * dist,
     angle: ang,
   };
