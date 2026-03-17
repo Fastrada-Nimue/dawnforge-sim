@@ -338,7 +338,7 @@ function openPopoutWindow() {
   const popup = window.open(
     popoutUrl.toString(),
     "dawnforge-popout",
-    "popup=yes,width=1600,height=960,resizable=yes,scrollbars=no"
+    "popup=yes,width=1280,height=960,resizable=yes,scrollbars=no"
   );
 
   if (popup) {
