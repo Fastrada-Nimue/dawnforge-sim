@@ -771,16 +771,27 @@ function castSelectedPower(tx, ty) {
   const volleyPowers = getUnlockedVolleyPowers();
   if (volleyPowers.length === 0) return;
 
-  // Allow explicit casting of unlocked base powers even when combos would normally consume them.
+  let castAny = false;
+
+  // Prioritize the selected power, but still cast the rest of the volley so all element effects are visible.
   if (game.selectedCastKey && game.powers[game.selectedCastKey] && game.powers[game.selectedCastKey].unlocked) {
-    return tryCastPower(game.selectedCastKey, tx, ty, 0);
+    castAny = tryCastPower(game.selectedCastKey, tx, ty, 0) || castAny;
   }
 
-  const center = (volleyPowers.length - 1) * 0.5;
-  let castAny = false;
-  for (let i = 0; i < volleyPowers.length; i++) {
+  const others = volleyPowers.filter((k) => k !== game.selectedCastKey);
+  const center = (others.length - 1) * 0.5;
+  for (let i = 0; i < others.length; i++) {
     const offset = (i - center) * 0.035;
-    castAny = tryCastPower(volleyPowers[i], tx, ty, offset) || castAny;
+    castAny = tryCastPower(others[i], tx, ty, offset) || castAny;
+  }
+
+  // Fallback when nothing is selected.
+  if (!game.selectedCastKey) {
+    const baseCenter = (volleyPowers.length - 1) * 0.5;
+    for (let i = 0; i < volleyPowers.length; i++) {
+      const offset = (i - baseCenter) * 0.035;
+      castAny = tryCastPower(volleyPowers[i], tx, ty, offset) || castAny;
+    }
   }
 
   return castAny;
