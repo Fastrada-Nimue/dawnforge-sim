@@ -1381,22 +1381,53 @@ function generateLevelUpChoices() {
     });
   }
 
-  for (const key of getUnlockedBasePowers()) {
-    if (consumed.has(key)) continue;
-    choices.push(makePowerUpgradeChoice(key, `Strengthen one part of your volley.`));
-  }
+  // General buffs fill level-up slots; element upgrades live in the between-room draft
+  choices.push({
+    name: "Spell Surge",
+    desc: "+18% global damage",
+    apply: () => { game.globalDamageMul *= 1.18; feed("Arcane output increased."); },
+  });
+  choices.push({
+    name: "Arcane Tempo",
+    desc: "All cooldowns 10% faster",
+    apply: () => { game.cooldownMul *= 0.9; feed("Casting tempo accelerated."); },
+  });
+  choices.push({
+    name: "Rune Sharpening",
+    desc: "+12% spell damage",
+    apply: () => { game.globalDamageMul *= 1.12; feed("Runes sharpened for higher damage."); },
+  });
+  choices.push({
+    name: "Quickened Sigils",
+    desc: "+15% cast speed",
+    apply: () => { game.cooldownMul *= 0.85; feed("Sigils quickened."); },
+  });
+  choices.push({
+    name: "Fortify Wall",
+    desc: "+180 max wall HP and repair 180",
+    apply: () => {
+      game.wall.maxHp += 180;
+      game.wall.hp = Math.min(game.wall.maxHp, game.wall.hp + 180);
+      feed("Wall reinforced.");
+    },
+  });
+  choices.push({
+    name: "Emergency Repairs",
+    desc: "Repair wall by 25% of max HP",
+    apply: () => {
+      game.wall.hp = Math.min(game.wall.maxHp, game.wall.hp + game.wall.maxHp * 0.25);
+      feed("Repair crews restored the wall.");
+    },
+  });
 
-  for (const comboKey of fusion.activeComboKeys) {
-    const sources = fusion.sourcesByKey[comboKey] || [];
-    if (sources.length) choices.push(makeFusionUpgradeChoice(comboKey, sources));
+  const out = pickWeightedUnique(choices.filter((c) => c.name.indexOf("Learn ") !== 0), 4);
+  // Prepend any unlock cards ahead of general buffs
+  const learnCards = choices.filter((c) => c.name.indexOf("Learn ") === 0);
+  const combined = [...learnCards, ...out].slice(0, 4);
+  if (learnCards.length > 0 && !combined.some((c) => c.name.indexOf("Learn ") === 0)) {
+    combined[combined.length - 1] = learnCards[0];
   }
-
-  choices.sort((a, b) => getChoiceDraftWeight(b) - getChoiceDraftWeight(a));
-  const out = choices.slice(0, 4);
-  if (locked.length > 0 && !out.some((c) => c.name.indexOf("Learn ") === 0)) {
-    out[out.length - 1] = choices.find((c) => c.name.indexOf("Learn ") === 0) || out[out.length - 1];
-  }
-  return out;
+  return combined.length ? combined : out;
 }
 
 function openStartingPowerDraft() {
@@ -1793,8 +1824,22 @@ function addElementUpgradeChoices(pool, key) {
   const power = game.powers[key];
   if (!power || !power.unlocked) return;
 
-  if (key === "arc") {
+  const levelCdFloor = key === "magma" ? 1.6 : 0.45;
+  const push = (choice) => {
     pool.push({
+      ...choice,
+      desc: `${choice.desc} Also +1 ${power.name} level.`,
+      apply: () => {
+        power.level += 1;
+        power.cd = Math.max(levelCdFloor, power.cd * 0.95);
+        choice.apply();
+        setToast(`${power.name} reached level ${power.level}.`, "good");
+      },
+    });
+  };
+
+  if (key === "arc") {
+    push({
       name: "Arc Overcharge",
       desc: "Arc Bolt damage +22%",
       apply: () => {
@@ -1802,7 +1847,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Arc Bolt damage surged.");
       },
     });
-    pool.push({
+    push({
       name: "Forked Arc",
       desc: "+1 Arc Bolt pierce",
       apply: () => {
@@ -1810,7 +1855,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Arc Bolt now pierces deeper into the wave.");
       },
     });
-    pool.push({
+    push({
       name: "Capacitor Lattice",
       desc: "Arc damage +34%, cast speed -9%",
       apply: () => {
@@ -1819,7 +1864,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Arc bolts hit harder, but cycle slower.");
       },
     });
-    pool.push({
+    push({
       name: "Pulse Cycling",
       desc: "Arc cast speed +18%, damage -12%",
       apply: () => {
@@ -1831,7 +1876,7 @@ function addElementUpgradeChoices(pool, key) {
   }
 
   if (key === "fire") {
-    pool.push({
+    push({
       name: "Widened Blaze",
       desc: "Fire blast area +28%",
       apply: () => {
@@ -1839,7 +1884,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Fire blast radius expanded.");
       },
     });
-    pool.push({
+    push({
       name: "Cinder Heart",
       desc: "Fire burn damage +30%",
       apply: () => {
@@ -1847,7 +1892,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Fire burn damage intensified.");
       },
     });
-    pool.push({
+    push({
       name: "Lingering Embers",
       desc: "Fire burn lasts 0.5s longer",
       apply: () => {
@@ -1855,7 +1900,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Burning embers linger longer.");
       },
     });
-    pool.push({
+    push({
       name: "Inferno Bloom",
       desc: "Fire area +42%, cast speed -10%",
       apply: () => {
@@ -1864,7 +1909,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Fire blooms wider, but with slower cadence.");
       },
     });
-    pool.push({
+    push({
       name: "Kindled Rhythm",
       desc: "Fire cast speed +20%, area -18%",
       apply: () => {
@@ -1876,7 +1921,7 @@ function addElementUpgradeChoices(pool, key) {
   }
 
   if (key === "earth") {
-    pool.push({
+    push({
       name: "Crushing Stone",
       desc: "Earth impact damage +24%",
       apply: () => {
@@ -1884,7 +1929,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Earth impacts hit harder.");
       },
     });
-    pool.push({
+    push({
       name: "Quagmire Core",
       desc: "Earth slow duration +0.35s",
       apply: () => {
@@ -1892,7 +1937,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Earth now drags enemies longer.");
       },
     });
-    pool.push({
+    push({
       name: "Boulder Mass",
       desc: "Earth projectile size +20%",
       apply: () => {
@@ -1900,7 +1945,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Earth boulders grew in size.");
       },
     });
-    pool.push({
+    push({
       name: "Seismic Payload",
       desc: "Earth size +32%, cast speed -10%",
       apply: () => {
@@ -1909,7 +1954,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Earth payload enlarged at a slower firing rhythm.");
       },
     });
-    pool.push({
+    push({
       name: "Pebble Salvo",
       desc: "Earth cast speed +18%, size -16%",
       apply: () => {
@@ -1921,7 +1966,7 @@ function addElementUpgradeChoices(pool, key) {
   }
 
   if (key === "water") {
-    pool.push({
+    push({
       name: "Flood Basin",
       desc: "Water burst radius +25%",
       apply: () => {
@@ -1929,7 +1974,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Water bursts cover more ground.");
       },
     });
-    pool.push({
+    push({
       name: "Restorative Spray",
       desc: "Water wall healing +30%",
       apply: () => {
@@ -1937,7 +1982,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Water restores more wall integrity.");
       },
     });
-    pool.push({
+    push({
       name: "Pressure Wave",
       desc: "Water burst damage +22%",
       apply: () => {
@@ -1945,7 +1990,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Water bursts strike harder.");
       },
     });
-    pool.push({
+    push({
       name: "Tidal Reservoir",
       desc: "Water radius +36%, cast speed -9%",
       apply: () => {
@@ -1954,7 +1999,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Water bursts spread farther with slower recast.");
       },
     });
-    pool.push({
+    push({
       name: "Jet Weave",
       desc: "Water cast speed +18%, radius -15%",
       apply: () => {
@@ -1966,7 +2011,7 @@ function addElementUpgradeChoices(pool, key) {
   }
 
   if (key === "wind") {
-    pool.push({
+    push({
       name: "Gale Corridor",
       desc: "Wind width +24%",
       apply: () => {
@@ -1974,7 +2019,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Wind lanes widened.");
       },
     });
-    pool.push({
+    push({
       name: "Backdraft",
       desc: "Wind push +26%",
       apply: () => {
@@ -1982,7 +2027,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Wind now shoves enemies farther back.");
       },
     });
-    pool.push({
+    push({
       name: "Tailwind Sustain",
       desc: "Wind duration +20%",
       apply: () => {
@@ -1990,7 +2035,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Wind lines remain active longer.");
       },
     });
-    pool.push({
+    push({
       name: "Cyclone Front",
       desc: "Wind width +34%, cast speed -10%",
       apply: () => {
@@ -1999,7 +2044,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Wind fronts widened, but cycle slower.");
       },
     });
-    pool.push({
+    push({
       name: "Razor Draft",
       desc: "Wind cast speed +20%, width -18%",
       apply: () => {
@@ -2011,7 +2056,7 @@ function addElementUpgradeChoices(pool, key) {
   }
 
   if (key === "magma") {
-    pool.push({
+    push({
       name: "Volcanic Spread",
       desc: "Magma radius +22%",
       apply: () => {
@@ -2019,7 +2064,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Magma spread widened.");
       },
     });
-    pool.push({
+    push({
       name: "Core Heat",
       desc: "Magma damage-over-time +24%",
       apply: () => {
@@ -2027,7 +2072,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Magma heat intensified.");
       },
     });
-    pool.push({
+    push({
       name: "Eruption Force",
       desc: "Magma blast damage +26%",
       apply: () => {
@@ -2035,7 +2080,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Magma eruptions hit harder.");
       },
     });
-    pool.push({
+    push({
       name: "Caldera Field",
       desc: "Magma radius +34%, cast speed -11%",
       apply: () => {
@@ -2044,7 +2089,7 @@ function addElementUpgradeChoices(pool, key) {
         feed("Magma fields expanded with slower cycling.");
       },
     });
-    pool.push({
+    push({
       name: "Splinter Vent",
       desc: "Magma cast speed +16%, radius -16%",
       apply: () => {
@@ -2065,28 +2110,10 @@ function generateUpgradeChoices() {
   if (game.powers.arc.unlocked && !consumed.has("arc")) addElementUpgradeChoices(pool, "arc");
   for (const key of unlockedPowers) {
     if (consumed.has(key)) continue;
-    pool.push({
-      name: `Upgrade ${game.powers[key].name}`,
-      desc: `${game.powers[key].name} level +1 (damage/utility scales)`,
-      apply: () => {
-        game.powers[key].level += 1;
-        game.powers[key].cd = Math.max(0.45, game.powers[key].cd * 0.95);
-        feed(`${game.powers[key].name} reached level ${game.powers[key].level}.`);
-      },
-    });
     addElementUpgradeChoices(pool, key);
   }
 
   if (game.magmaUnlocked && game.powers.magma.unlocked) {
-    pool.push({
-      name: `Upgrade ${game.powers.magma.name}`,
-      desc: `${game.powers.magma.name} level +1 (damage/utility scales)`,
-      apply: () => {
-        game.powers.magma.level += 1;
-        game.powers.magma.cd = Math.max(1.6, game.powers.magma.cd * 0.95);
-        feed(`${game.powers.magma.name} reached level ${game.powers.magma.level}.`);
-      },
-    });
     addElementUpgradeChoices(pool, "magma");
   }
 
