@@ -313,7 +313,7 @@ function openStartingElementOverlay() {
   const choices = ["arc", "fire", "earth", "water", "wind", "nature"].map((key) => ({
     key,
     name: `Start with ${capitalize(key === "arc" ? "arc bolt" : key)}`,
-    desc: `${getStartingPowerDesc(key)} ${getElementComboHint(key)}`,
+    desc: getElementChoiceDesc(key),
   }));
 
   renderChoiceOverlay("Choose Your Starting Power", choices, (choice) => {
@@ -1738,16 +1738,6 @@ function renderChoiceOverlay(title, choices, onPick) {
   }
 }
 
-function getStartingPowerDesc(key) {
-  if (key === "arc") return "Fast single-target bolts.";
-  if (key === "fire") return "Explosive burn shots.";
-  if (key === "earth") return "Heavy slows and impact.";
-  if (key === "water") return "Burst damage plus wall heal.";
-  if (key === "wind") return "Piercing push lane.";
-  if (key === "nature") return "Rooting briar control.";
-  return "Unlock this power.";
-}
-
 function summarizeComboKeys(keys, maxItems = 2) {
   const uniq = [...new Set((keys || []).filter(Boolean))];
   if (uniq.length === 0) return "none";
@@ -1777,6 +1767,10 @@ function getElementComboHint(key) {
 
   const nowText = immediatePairs.length > 0 ? `Now: ${summarizeComboKeys(immediatePairs, 2)} | ` : "";
   return `${nowText}Paths: ${summarizeComboKeys(pairKeys, 2)} | T${triCount} A${apexCount}`;
+}
+
+function getElementChoiceDesc(key) {
+  return getElementComboHint(key);
 }
 
 function unlockPower(key, selectPower = false) {
@@ -1898,7 +1892,7 @@ function generateLevelUpChoices() {
 function openStartingPowerDraft() {
   const choices = basePowerOrder.map((key) => ({
     name: `Awaken ${game.powers[key].name}`,
-    desc: getStartingPowerDesc(key),
+    desc: getElementChoiceDesc(key),
     apply: () => unlockPower(key, true),
   }));
 
@@ -2623,7 +2617,8 @@ function addElementUpgradeChoices(pool, key) {
 
 function generateUpgradeChoices() {
   const pool = [];
-  const unlockPool = [];
+  const elementUnlockPool = [];
+  const specialUnlockPool = [];
   const fusion = getActiveFusionState();
   const consumed = fusion.consumed;
   const chainFocus = Array.isArray(game.unlockChainFocus) ? game.unlockChainFocus : [];
@@ -2669,6 +2664,7 @@ function generateUpgradeChoices() {
         }
       }
 
+      if (card.unlockType === "apex") weight += 0.55;
       if (card.unlockType === "triple") weight += 0.4;
       if (card.unlockType === "pair") weight += 0.25;
 
@@ -2703,9 +2699,9 @@ function generateUpgradeChoices() {
 
   const lockedBase = getLockedBasePowers();
   for (const key of lockedBase) {
-    unlockPool.push({
+    elementUnlockPool.push({
       name: `Learn ${game.powers[key].name}`,
-      desc: `${getStartingPowerDesc(key)} ${getElementComboHint(key)}`,
+      desc: getElementChoiceDesc(key),
       unlockType: "element",
       unlockKeys: [key],
       apply: () => {
@@ -2724,7 +2720,7 @@ function generateUpgradeChoices() {
     if (!pa || !pb || !pa.unlocked || !pb.unlocked) continue;
     if (pa.level < def.minLevel || pb.level < def.minLevel) continue;
 
-    unlockPool.push({
+    specialUnlockPool.push({
       name: `Awaken ${capitalize(def.key)}`,
       desc: `${capitalize(def.a)}+${capitalize(def.b)} fusion.`,
       unlockType: "pair",
@@ -2747,7 +2743,7 @@ function generateUpgradeChoices() {
     if (!pa || !pb || !pc || !pa.unlocked || !pb.unlocked || !pc.unlocked) continue;
     if (pa.level < def.minLevel || pb.level < def.minLevel || pc.level < def.minLevel) continue;
 
-    unlockPool.push({
+    specialUnlockPool.push({
       name: `Awaken ${capitalize(def.key)}`,
       desc: `${capitalize(def.a)}+${capitalize(def.b)}+${capitalize(def.c)} triad fusion.`,
       unlockType: "triple",
@@ -2764,7 +2760,7 @@ function generateUpgradeChoices() {
 
   const magmaEligible = game.powers.fire.unlocked && game.powers.earth.unlocked && game.powers.fire.level >= 3 && game.powers.earth.level >= 3 && !game.magmaUnlocked;
   if (magmaEligible) {
-    unlockPool.push({
+    specialUnlockPool.push({
       name: "Awaken Magma",
       desc: "Fire+Earth fusion.",
       unlockType: "pair",
@@ -2776,6 +2772,29 @@ function generateUpgradeChoices() {
         noteUnlockChain(["fire", "earth"]);
         game.selectedCastKey = "magma";
         feed("Magma awakened and added to your volley.");
+      },
+    });
+  }
+
+  const apexOptions = getApexConvergenceOptions(fusion);
+  for (const apexOption of apexOptions) {
+    specialUnlockPool.push({
+      name: `Converge into ${game.powers[apexOption.def.key].name}`,
+      desc: `Fuse dual synergies into ${game.powers[apexOption.def.key].name}.`,
+      unlockType: "apex",
+      unlockKeys: [apexOption.def.a, apexOption.def.b, apexOption.def.c, apexOption.def.d],
+      apply: () => {
+        game.apexFusionUnlocked[apexOption.def.key] = true;
+        for (const k of [apexOption.def.a, apexOption.def.b, apexOption.def.c, apexOption.def.d]) {
+          if (game.powers[k]) {
+            game.powers[k].unlocked = true;
+            game.powers[k].level = Math.max(game.powers[k].level, apexOption.def.minLevel);
+          }
+        }
+        noteUnlockChain([apexOption.def.a, apexOption.def.b, apexOption.def.c, apexOption.def.d]);
+        game.selectedCastKey = apexOption.def.key;
+        feed(`Active synergies converged into ${game.powers[apexOption.def.key].name}.`);
+        setToast(`${game.powers[apexOption.def.key].name} unlocked.`, "good");
       },
     });
   }
@@ -2854,31 +2873,14 @@ function generateUpgradeChoices() {
 
   const out = pickWeightedUnique(pool, 6);
 
-  if (unlockPool.length > 0) {
-    const unlockCards = pickWeightedUnlockCards(unlockPool, Math.min(2, unlockPool.length));
-    for (let i = 0; i < unlockCards.length && i < out.length; i++) out[i] = unlockCards[i];
+  if (elementUnlockPool.length > 0) {
+    const elementCards = pickWeightedUnlockCards(elementUnlockPool, Math.min(2, elementUnlockPool.length));
+    for (let i = 0; i < elementCards.length && i < out.length; i++) out[i] = elementCards[i];
   }
 
-  const apexOptions = getApexConvergenceOptions(fusion);
-  const apexOption = apexOptions[0] || null;
-  const canConvergeToApex = !!apexOption;
-  if (canConvergeToApex) {
-    out[0] = {
-      name: `Converge into ${game.powers[apexOption.def.key].name}`,
-      desc: `Fuse active dual synergies into ${game.powers[apexOption.def.key].name} (${apexOption.def.a}+${apexOption.def.b}+${apexOption.def.c}+${apexOption.def.d}).`,
-      apply: () => {
-        game.apexFusionUnlocked[apexOption.def.key] = true;
-        for (const k of [apexOption.def.a, apexOption.def.b, apexOption.def.c, apexOption.def.d]) {
-          if (game.powers[k]) {
-            game.powers[k].unlocked = true;
-            game.powers[k].level = Math.max(game.powers[k].level, apexOption.def.minLevel);
-          }
-        }
-        game.selectedCastKey = apexOption.def.key;
-        feed(`Active synergies converged into ${game.powers[apexOption.def.key].name}.`);
-        setToast(`${game.powers[apexOption.def.key].name} unlocked.`, "good");
-      },
-    };
+  if (specialUnlockPool.length > 0 && out.length > 2) {
+    const specialUnlock = pickWeightedUnlockCards(specialUnlockPool, 1)[0] || null;
+    if (specialUnlock) out[2] = specialUnlock;
   }
 
   return out;
@@ -4708,7 +4710,7 @@ function drawPowerBar() {
   for (const def of COMBO_DEFS) {
     const pa = game.powers[def.a], pb = game.powers[def.b];
     if (pa && pb && pa.unlocked && pb.unlocked && (pa.level < def.minLevel || pb.level < def.minLevel)) {
-      const hint = `→${capitalize(def.key)}@Lv${def.minLevel}`;
+      const hint = `${capitalize(def.key)} at Lv${def.minLevel}`;
       if (!mergeHints[def.a]) mergeHints[def.a] = hint;
       if (!mergeHints[def.b]) mergeHints[def.b] = hint;
     }
@@ -4717,7 +4719,7 @@ function drawPowerBar() {
     const pa = game.powers[def.a], pb = game.powers[def.b], pc = game.powers[def.c];
     if (pa && pb && pc && pa.unlocked && pb.unlocked && pc.unlocked &&
         (pa.level < def.minLevel || pb.level < def.minLevel || pc.level < def.minLevel)) {
-      const hint = `→${capitalize(def.key)}@Lv${def.minLevel}`;
+      const hint = `${capitalize(def.key)} at Lv${def.minLevel}`;
       if (!mergeHints[def.a]) mergeHints[def.a] = hint;
       if (!mergeHints[def.b]) mergeHints[def.b] = hint;
       if (!mergeHints[def.c]) mergeHints[def.c] = hint;
@@ -4727,7 +4729,7 @@ function drawPowerBar() {
     const pa = game.powers[def.a], pb = game.powers[def.b], pc = game.powers[def.c], pd = game.powers[def.d];
     if (pa && pb && pc && pd && pa.unlocked && pb.unlocked && pc.unlocked && pd.unlocked &&
         (pa.level < def.minLevel || pb.level < def.minLevel || pc.level < def.minLevel || pd.level < def.minLevel)) {
-      const hint = `→${capitalize(def.key)}@Lv${def.minLevel}`;
+      const hint = `${capitalize(def.key)} at Lv${def.minLevel}`;
       if (!mergeHints[def.a]) mergeHints[def.a] = hint;
       if (!mergeHints[def.b]) mergeHints[def.b] = hint;
       if (!mergeHints[def.c]) mergeHints[def.c] = hint;
@@ -4735,10 +4737,10 @@ function drawPowerBar() {
     }
   }
 
-  const BOX_W = 120, BOX_H = 46, GAP = 6;
+  const BOX_W = 120, BOX_H = 56, GAP = 6;
   const totalW = displayKeys.length * BOX_W + (displayKeys.length - 1) * GAP;
   let x = WIDTH * 0.5 - totalW * 0.5;
-  const y = HEIGHT - 56;
+  const y = HEIGHT - BOX_H - 10;
 
   for (const key of displayKeys) {
     const p = game.powers[key];
@@ -4790,27 +4792,57 @@ function drawPowerBar() {
       ctx.strokeRect(x + 1, y + 1, BOX_W - 2, BOX_H - 2);
     }
 
+    const cooldownRef = isCombo ? game.powers[key].cd : p.cd;
+    const cooldownTotal = Math.max(0.16, cooldownRef * (game.cooldownMul || 1));
+    const cooldownLeft = isActive ? Math.max(0, game.powers[key].timer || 0) : 0;
+    const cdRatio = isActive && cooldownRef > 0 ? 1 - cooldownLeft / cooldownTotal : 0;
+
+    let statusText = "LOCKED";
+    let statusColor = "#7a8698";
+    if (isConsumed) {
+      statusText = "MERGED";
+      statusColor = "#7ae8d8";
+    } else if (isActive) {
+      if (cooldownLeft <= 0.04) {
+        statusText = "READY";
+        statusColor = "#7ee89f";
+      } else {
+        statusText = `${cooldownLeft.toFixed(1)}s`;
+        statusColor = "#a8c6ff";
+      }
+    } else if (p.unlocked) {
+      statusText = isCombo ? "FUSION" : "IDLE";
+      statusColor = isCombo ? "#8ce3d5" : "#b7c0cf";
+    }
+
     // Name + Level
     ctx.fillStyle = isConsumed ? "#7ae8d888" : isActive ? p.color : "#6f7a8a";
     ctx.font = "bold 10px Trebuchet MS";
-    const lvSuffix = isActive ? ` Lv.${displayLevel}` : p.unlocked ? ` Lv.${displayLevel}` : " Locked";
-    ctx.fillText(p.name + lvSuffix, x + 6, y + 14);
+    ctx.fillText(p.name, x + 6, y + 14);
 
-    // Sub-line: combo source pair OR merge hint OR consumed-into label
+    ctx.fillStyle = isActive ? "rgba(255,255,255,0.86)" : "rgba(180,190,205,0.82)";
+    ctx.font = "bold 9px Trebuchet MS";
+    ctx.fillText(`LV ${displayLevel}`, x + BOX_W - 30, y + 14);
+
+    ctx.fillStyle = statusColor;
+    ctx.font = "bold 13px Trebuchet MS";
+    ctx.fillText(statusText, x + 6, y + 31);
+
+    // Sub-line: combo source pair OR convergence hint OR consumed-into label
     ctx.font = "9px Trebuchet MS";
     if (isCombo && isActive && comboSources) {
       ctx.fillStyle = "#7ae8d8";
-      ctx.fillText(comboSources.map(capitalize).join("+"), x + 6, y + 26);
+      ctx.fillText(comboSources.map(capitalize).join("+"), x + 6, y + 42);
     } else if (isConsumed) {
       const comboName = activeComboKeys.find(ck => {
         const src = sourcesByKey[ck] || [];
         return src.includes(key);
       }) || null;
       ctx.fillStyle = "#7ae8d866";
-      ctx.fillText(comboName ? `→${capitalize(comboName)}` : "merged", x + 6, y + 26);
+      ctx.fillText(comboName ? `Into ${capitalize(comboName)}` : "Merged into fusion", x + 6, y + 42);
     } else if (!isCombo && mergeHints[key]) {
       ctx.fillStyle = "#ffa040";
-      ctx.fillText(mergeHints[key], x + 6, y + 26);
+      ctx.fillText(mergeHints[key], x + 6, y + 42);
     }
 
     if (isCombo && isActive) {
@@ -4830,16 +4862,13 @@ function drawPowerBar() {
     }
 
     // CD bar + radial rune cooldown
-    const cooldownRef = isCombo ? game.powers[key].cd : p.cd;
-    const cdRatio = isActive && cooldownRef > 0
-      ? 1 - game.powers[key].timer / (cooldownRef * (game.cooldownMul || 1)) : 0;
     ctx.fillStyle = "#112031";
-    ctx.fillRect(x + 6, y + 32, BOX_W - 12, 7);
+    ctx.fillRect(x + 6, y + 46, BOX_W - 12, 6);
     ctx.fillStyle = !isActive ? "#4d5766" : game.powers[key].timer <= 0 ? "#7ee89f" : "#8cb7ff";
-    ctx.fillRect(x + 6, y + 32, (BOX_W - 12) * Math.max(0, Math.min(1, cdRatio)), 7);
+    ctx.fillRect(x + 6, y + 46, (BOX_W - 12) * Math.max(0, Math.min(1, cdRatio)), 6);
 
     const rx = x + BOX_W - 12;
-    const ry = y + 22;
+    const ry = y + 29;
     ctx.fillStyle = "rgba(8, 15, 25, 0.9)";
     circle(rx, ry, 8.5);
     ctx.strokeStyle = "rgba(190, 210, 240, 0.35)";
