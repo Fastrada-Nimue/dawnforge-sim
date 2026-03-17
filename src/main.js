@@ -30,7 +30,7 @@ const ui = {
 
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
-const MAX_WAVES = 12;
+const MAX_WAVES = 30;
 const BOSS_WAVE_INTERVAL = 6; // Bosses at waves 6, 12, 18, etc. (after every 5 regular levels)
 const BOSS_WARNING_SECONDS = 4;
 const MAX_SPARKS = 900;
