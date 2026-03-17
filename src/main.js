@@ -719,6 +719,8 @@ function spawnEnemy() {
           hitFlash: 0,
           critFlash: 0,
           lastRenderHp: 0,
+          prevX: 0,
+          prevY: 0,
           burn: 0, slow: 0, stun: 0, snare: 0,
         }
       : type === "brute"
@@ -736,6 +738,9 @@ function spawnEnemy() {
           hitFlash: 0,
           critFlash: 0,
           lastRenderHp: 0,
+          prevX: 0,
+          prevY: 0,
+          stompTimer: 0.2 + Math.random() * 0.16,
           burn: 0, slow: 0, stun: 0, snare: 0,
         }
       : {
@@ -752,14 +757,21 @@ function spawnEnemy() {
           hitFlash: 0,
           critFlash: 0,
           lastRenderHp: 0,
+          prevX: 0,
+          prevY: 0,
           burn: 0, slow: 0, stun: 0, snare: 0,
         };
+
+  enemy.prevX = enemy.x;
+  enemy.prevY = enemy.y;
 
   game.enemies.push(enemy);
 }
 
 function updateEnemies(dt) {
   for (const e of game.enemies) {
+    const prevX = e.x;
+    const prevY = e.y;
     const lane = getLaneBounds(e.r || 0);
     if (e.x < lane.left) e.x = lane.left;
     if (e.x > lane.right) e.x = lane.right;
@@ -788,6 +800,20 @@ function updateEnemies(dt) {
 
     if (e.y + e.r < targetY) {
       e.y += e.speed * slowMul * dt;
+
+      if (e.type === "runner" && !stunned && Math.random() < dt * 14) {
+        spawnSpark(e.x, e.y + e.r * 0.3, "#bceeff", 0.55);
+      }
+
+      if (e.type === "brute" && !stunned && slowMul > 0.2) {
+        e.stompTimer = (e.stompTimer || 0.26) - dt;
+        if (e.stompTimer <= 0) {
+          e.stompTimer = 0.24 + Math.random() * 0.16;
+          for (let i = 0; i < 3; i++) {
+            spawnSpark(e.x + (Math.random() - 0.5) * e.r * 0.9, e.y + e.r * 0.85, "#c9a180", 0.78);
+          }
+        }
+      }
     } else {
       e.atkCd -= dt;
       if (e.atkCd <= 0) {
@@ -805,6 +831,8 @@ function updateEnemies(dt) {
     }
 
     if (e.slow > 0) e.slow -= dt;
+    e.prevX = prevX;
+    e.prevY = prevY;
     e.hitFlash = Math.max(0, (e.hitFlash || 0) - dt * 4.8);
     e.critFlash = Math.max(0, (e.critFlash || 0) - dt * 5.4);
   }
@@ -4081,6 +4109,22 @@ function drawEnemies() {
       e.lastRenderHp = e.hp;
     }
 
+    const dx = e.x - (Number.isFinite(e.prevX) ? e.prevX : e.x);
+    const dy = e.y - (Number.isFinite(e.prevY) ? e.prevY : e.y);
+    const speedVis = Math.hypot(dx, dy);
+
+    // Runner streak trail for a clearer speed read.
+    if (e.type === "runner" && speedVis > 0.1) {
+      const tailLen = Math.min(e.r * 1.6, speedVis * 10.5 + e.r * 0.45);
+      const ux = dx / (speedVis || 1);
+      const uy = dy / (speedVis || 1);
+      const tx = e.x - ux * tailLen;
+      const ty = e.y - uy * tailLen;
+      ctx.globalAlpha = 0.34;
+      drawZigZagLine(e.x, e.y, tx, ty, "rgba(184, 236, 255, 0.62)", 1.4);
+      ctx.globalAlpha = 1;
+    }
+
     // Per-type silhouette for faster read: runner diamond, brute hex, boss crown ring, grunt round.
     if (e.type === "runner") {
       ctx.fillStyle = e.color;
@@ -4095,6 +4139,16 @@ function drawEnemies() {
       ctx.lineWidth = 1.3;
       ctx.stroke();
     } else if (e.type === "brute") {
+      const stompPhase = (e.stompTimer || 0.2) / 0.4;
+      const ringPulse = Math.max(0, Math.min(1, 1 - stompPhase));
+      ctx.globalAlpha = 0.12 + ringPulse * 0.12;
+      ctx.strokeStyle = "rgba(230, 176, 138, 0.6)";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y + e.r * 0.85, e.r * (0.6 + ringPulse * 0.5), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
       ctx.fillStyle = e.color;
       ctx.beginPath();
       for (let i = 0; i < 6; i++) {
@@ -4110,6 +4164,19 @@ function drawEnemies() {
       ctx.lineWidth = 1.4;
       ctx.stroke();
     } else if (e.type === "boss") {
+      const targetY = game.wall ? game.wall.y - 3 : HEIGHT;
+      const nearWall = e.y + e.r >= targetY - 3;
+      const atkTele = nearWall ? Math.max(0, 1 - ((e.atkCd || 0) / Math.max(0.3, getEnemyAttackCooldown("boss")))) : 0;
+      if (atkTele > 0) {
+        ctx.globalAlpha = 0.15 + atkTele * 0.2;
+        ctx.strokeStyle = "rgba(255, 120, 120, 0.72)";
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r + 10 + atkTele * 8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
       ctx.fillStyle = e.color;
       circle(e.x, e.y, e.r);
       ctx.strokeStyle = "rgba(255, 242, 214, 0.52)";
