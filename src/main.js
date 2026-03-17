@@ -1210,6 +1210,8 @@ function tryCastPower(key, tx, ty, angleOffset = 0) {
       life: 3.6,
     });
     explodeAt(aimed.x, aimed.y, (62 + p.level * 14) * p.radiusMul, (46 + p.level * 14) * p.blastMul);
+    for (let i = 0; i < 14; i++) spawnSpark(aimed.x, aimed.y, i % 2 === 0 ? "#ff7c40" : "#ffcf87", 2.3);
+    for (let i = 0; i < 6; i++) spawnSpark(aimed.x, aimed.y, "#5e2f1c", 1.2);
     return true;
   }
 
@@ -2788,17 +2790,46 @@ function drawZones() {
     } else if (z.type === "windLine") {
       drawZigZagLine(z.x1, z.y1, z.x2, z.y2, "rgba(190, 245, 255, 0.82)", 5);
     } else if (z.type === "lava") {
-      const heat = 0.78 + Math.sin(game.time * 7) * 0.18;
-      ctx.fillStyle = `rgba(255, 95, 60, ${0.24 + heat * 0.12})`;
+      const heat = 0.76 + Math.sin(game.time * 7.5) * 0.2;
+      const innerPulse = z.r * (0.45 + 0.06 * Math.sin(game.time * 6.2));
+
+      // Outer heat haze ring
+      ctx.fillStyle = `rgba(255, 78, 42, ${0.18 + heat * 0.12})`;
       circle(z.x, z.y, z.r);
-      ctx.strokeStyle = "rgba(255, 140, 90, 0.75)";
+      ctx.strokeStyle = "rgba(255, 148, 98, 0.68)";
       ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.strokeStyle = `rgba(255, 196, 120, ${0.24 + heat * 0.28})`;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(z.x, z.y, z.r * 0.58 + Math.sin(game.time * 5.4) * 3, 0, Math.PI * 2);
+
+      // Molten core
+      ctx.fillStyle = `rgba(255, 170, 84, ${0.28 + heat * 0.16})`;
+      circle(z.x, z.y, innerPulse);
+      ctx.strokeStyle = "rgba(255, 224, 150, 0.54)";
+      ctx.lineWidth = 1.4;
       ctx.stroke();
+
+      // Crack spokes for a distinct magma signature
+      for (let i = 0; i < 6; i++) {
+        const a = game.time * 0.9 + i * (Math.PI / 3);
+        const len = z.r * (0.55 + 0.12 * Math.sin(game.time * 4 + i));
+        drawZigZagLine(
+          z.x + Math.cos(a) * (innerPulse * 0.25),
+          z.y + Math.sin(a) * (innerPulse * 0.25),
+          z.x + Math.cos(a) * len,
+          z.y + Math.sin(a) * len,
+          "rgba(92, 34, 16, 0.65)",
+          1.2
+        );
+      }
+
+      // Ember vents orbiting around the core
+      for (let i = 0; i < 4; i++) {
+        const a = game.time * 1.8 + i * (Math.PI * 0.5);
+        const rr = innerPulse * 0.85;
+        ctx.fillStyle = "rgba(255, 210, 122, 0.6)";
+        circle(z.x + Math.cos(a) * rr, z.y + Math.sin(a) * rr, 3);
+        ctx.fillStyle = "rgba(255, 120, 66, 0.6)";
+        circle(z.x + Math.cos(a) * rr * 0.7, z.y + Math.sin(a) * rr * 0.7, 2.2);
+      }
     } else if (z.type === "mist") {
       const swirl = Math.sin(game.time * 4.5);
       ctx.fillStyle = `rgba(160, 220, 190, ${0.14 + (swirl + 1) * 0.03})`;
