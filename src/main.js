@@ -86,6 +86,57 @@ const COMBO_DEFS = [
   { key: "quicksand", a: "earth", b: "water", minLevel: 3 },
 ];
 
+// Triple fusions take priority over pair fusions.
+const TRIPLE_COMBO_DEFS = [
+  { key: "monsoon",  a: "fire",  b: "water", c: "wind",  minLevel: 3 },
+  { key: "sandglass", a: "fire",  b: "earth", c: "wind",  minLevel: 3 },
+  { key: "mudflow",  a: "fire",  b: "earth", c: "water", minLevel: 3 },
+  { key: "blizzard", a: "earth", b: "water", c: "wind",  minLevel: 3 },
+];
+
+function getActiveFusionState() {
+  const consumed = new Set();
+  const activeComboKeys = [];
+  const sourcesByKey = {};
+
+  for (const def of TRIPLE_COMBO_DEFS) {
+    if (consumed.has(def.a) || consumed.has(def.b) || consumed.has(def.c)) continue;
+    const pa = game.powers && game.powers[def.a];
+    const pb = game.powers && game.powers[def.b];
+    const pc = game.powers && game.powers[def.c];
+    if (pa && pb && pc && pa.unlocked && pb.unlocked && pc.unlocked &&
+        pa.level >= def.minLevel && pb.level >= def.minLevel && pc.level >= def.minLevel) {
+      activeComboKeys.push(def.key);
+      sourcesByKey[def.key] = [def.a, def.b, def.c];
+      consumed.add(def.a);
+      consumed.add(def.b);
+      consumed.add(def.c);
+    }
+  }
+
+  if (game.magmaUnlocked && game.powers && game.powers.magma && game.powers.magma.unlocked &&
+      !consumed.has("fire") && !consumed.has("earth")) {
+    activeComboKeys.push("magma");
+    sourcesByKey.magma = ["fire", "earth"];
+    consumed.add("fire");
+    consumed.add("earth");
+  }
+
+  for (const def of COMBO_DEFS) {
+    if (consumed.has(def.a) || consumed.has(def.b)) continue;
+    const pa = game.powers && game.powers[def.a];
+    const pb = game.powers && game.powers[def.b];
+    if (pa && pb && pa.unlocked && pb.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
+      activeComboKeys.push(def.key);
+      sourcesByKey[def.key] = [def.a, def.b];
+      consumed.add(def.a);
+      consumed.add(def.b);
+    }
+  }
+
+  return { consumed, activeComboKeys, sourcesByKey };
+}
+
 const game = {
   mode: "hub", // hub | running | upgrade | gameover | victory
   wave: 0,
@@ -478,7 +529,7 @@ function update(dt) {
 
   game.time += dt;
 
-  for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "quicksand"]) {
+  for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "quicksand", "monsoon", "sandglass", "mudflow", "blizzard"]) {
     if (!game.powers[key]) continue;
     game.powers[key].timer = Math.max(0, game.powers[key].timer - dt);
   }
@@ -805,27 +856,9 @@ function getUnlockedBasePowers() {
 // Returns array of volley powers. Combos consume base skills by priority order.
 function getUnlockedVolleyPowers() {
   if (!game.powers) return [];
-  const consumed = new Set();
-  const activeComboKeys = [];
-
-  // Magma (unlock-gated via upgrade card) takes priority over other fire/earth combos
-  if (game.magmaUnlocked && game.powers.magma && game.powers.magma.unlocked) {
-    activeComboKeys.push("magma");
-    consumed.add("fire");
-    consumed.add("earth");
-  }
-
-  // Auto-combos: only activate when BOTH components are unlocked AND each is level >= 3
-  for (const def of COMBO_DEFS) {
-    if (consumed.has(def.a) || consumed.has(def.b)) continue;
-    const pa = game.powers[def.a];
-    const pb = game.powers[def.b];
-    if (pa && pb && pa.unlocked && pb.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
-      activeComboKeys.push(def.key);
-      consumed.add(def.a);
-      consumed.add(def.b);
-    }
-  }
+  const fusion = getActiveFusionState();
+  const consumed = fusion.consumed;
+  const activeComboKeys = fusion.activeComboKeys;
 
   const baseActive = basePowerOrder.filter(k => game.powers[k] && game.powers[k].unlocked && !consumed.has(k));
   return [...baseActive, ...activeComboKeys];
@@ -859,6 +892,10 @@ function getCappedCastTimer(powerKey, baseCd) {
     storm: 1.85,
     chain: 0.9,
     quicksand: 2.0,
+    monsoon: 2.25,
+    sandglass: 2.35,
+    mudflow: 2.4,
+    blizzard: 2.3,
   };
   const maxCd = maxByPower[powerKey] || 1.8;
   return Math.max(0.16, Math.min(maxCd, baseCd * game.cooldownMul));
@@ -866,6 +903,78 @@ function getCappedCastTimer(powerKey, baseCd) {
 
 function tryCastPower(key, tx, ty, angleOffset = 0) {
   const aimed = getOffsetTarget(tx, ty, angleOffset);
+
+  const tripleDef = TRIPLE_COMBO_DEFS.find(d => d.key === key);
+  if (tripleDef) {
+    const cp = game.powers[key];
+    if (!cp || cp.timer > 0) return false;
+    cp.timer = getCappedCastTimer(key, cp.cd);
+    const la = (game.powers[tripleDef.a] && game.powers[tripleDef.a].level) || 1;
+    const lb = (game.powers[tripleDef.b] && game.powers[tripleDef.b].level) || 1;
+    const lc = (game.powers[tripleDef.c] && game.powers[tripleDef.c].level) || 1;
+    const lAvg = (la + lb + lc) / 3;
+
+    if (game.zones.length >= MAX_ZONES) game.zones.shift();
+
+    if (key === "monsoon") {
+      game.zones.push({
+        type: "triad",
+        variant: "monsoon",
+        x: aimed.x, y: aimed.y,
+        r: 78 + lAvg * 10,
+        dps: (24 + lAvg * 6) * game.globalDamageMul,
+        slow: 0.8,
+        push: 52 + lAvg * 7,
+        strikeCd: 0.28,
+        strikeTimer: 0.28,
+        strikeDamage: (18 + lAvg * 5.5) * game.globalDamageMul,
+        life: 2.2,
+      });
+    } else if (key === "sandglass") {
+      game.zones.push({
+        type: "triad",
+        variant: "sandglass",
+        x: aimed.x, y: aimed.y,
+        r: 72 + lAvg * 9,
+        dps: (26 + lAvg * 5.5) * game.globalDamageMul,
+        burn: 0.85 + lAvg * 0.08,
+        snare: 0.9 + lAvg * 0.08,
+        slashCd: 0.42,
+        slashTimer: 0.42,
+        slashDamage: (20 + lAvg * 5) * game.globalDamageMul,
+        life: 2.3,
+      });
+    } else if (key === "mudflow") {
+      game.zones.push({
+        type: "triad",
+        variant: "mudflow",
+        x: aimed.x, y: aimed.y,
+        r: 84 + lAvg * 11,
+        dps: (22 + lAvg * 6.2) * game.globalDamageMul,
+        slow: 0.62,
+        pull: 44 + lAvg * 6,
+        pulseCd: 0.5,
+        pulseTimer: 0.5,
+        pulseDamage: (21 + lAvg * 5.3) * game.globalDamageMul,
+        life: 2.45,
+      });
+    } else if (key === "blizzard") {
+      game.zones.push({
+        type: "triad",
+        variant: "blizzard",
+        x: aimed.x, y: aimed.y,
+        r: 86 + lAvg * 10,
+        dps: (20 + lAvg * 5.5) * game.globalDamageMul,
+        slow: 0.45,
+        stun: 0.45 + lAvg * 0.06,
+        burstCd: 0.34,
+        burstTimer: 0.34,
+        burstDamage: (16 + lAvg * 4.8) * game.globalDamageMul,
+        life: 2.35,
+      });
+    }
+    return true;
+  }
 
   // --- Auto-combo skills (use own timer, scale from component skill levels) ---
   const comboDef = COMBO_DEFS.find(d => d.key === key);
@@ -1215,6 +1324,14 @@ function startGameWithElement(key) {
     storm:     { level: 0, cd: 1.75, timer: 0, color: "#88bbff", name: "Storm"     },
     chain:     { level: 0, cd: 0.6,  timer: 0, color: "#b8d8ff", name: "Chain Arc" },
     quicksand: { level: 0, cd: 1.9,  timer: 0, color: "#c8a868", name: "Quicksand" },
+    monsoon:   { level: 0, cd: 2.05, timer: 0, color: "#7cd7ff", name: "Monsoon"   },
+    sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
+    mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
+    blizzard:  { level: 0, cd: 2.1,  timer: 0, color: "#b8ecff", name: "Blizzard"  },
+    monsoon:   { level: 0, cd: 2.05, timer: 0, color: "#7cd7ff", name: "Monsoon"   },
+    sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
+    mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
+    blizzard:  { level: 0, cd: 2.1,  timer: 0, color: "#b8ecff", name: "Blizzard"  },
   };
 
   unlockPower(key, true);
@@ -2078,6 +2195,83 @@ function updateZones(dt) {
         for (let i = 0; i < 4; i++) spawnSpark(z.x, z.y, "#b8964c", 0.8);
       }
     }
+
+    if (z.type === "triad") {
+      if (z.variant === "monsoon") {
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+            e.hp -= z.dps * dt;
+            e.slow = Math.max(e.slow, z.slow);
+            e.y -= z.push * dt;
+          }
+        }
+        z.strikeTimer -= dt;
+        if (z.strikeTimer <= 0) {
+          z.strikeTimer += z.strikeCd;
+          let target = null;
+          let bestHp = 0;
+          for (const e of game.enemies) {
+            if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r && e.hp > bestHp) {
+              bestHp = e.hp;
+              target = e;
+            }
+          }
+          if (target) {
+            target.hp -= z.strikeDamage;
+            for (let i = 0; i < 6; i++) spawnSpark(target.x, target.y, "#a9ecff", 1.3);
+          }
+        }
+      } else if (z.variant === "sandglass") {
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+            e.hp -= z.dps * dt;
+            e.burn = Math.max(e.burn, z.burn);
+            e.snare = Math.max(e.snare || 0, z.snare);
+          }
+        }
+        z.slashTimer -= dt;
+        if (z.slashTimer <= 0) {
+          z.slashTimer += z.slashCd;
+          explodeAt(z.x, z.y, z.r * 0.68, z.slashDamage);
+        }
+      } else if (z.variant === "mudflow") {
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+            e.hp -= z.dps * dt;
+            e.slow = Math.max(e.slow, z.slow);
+            const dx = z.x - e.x;
+            const dy = z.y - e.y;
+            const dist = Math.hypot(dx, dy) || 1;
+            e.x += (dx / dist) * z.pull * dt;
+            e.y += (dy / dist) * z.pull * dt;
+          }
+        }
+        z.pulseTimer -= dt;
+        if (z.pulseTimer <= 0) {
+          z.pulseTimer += z.pulseCd;
+          explodeAt(z.x, z.y, z.r * 0.58, z.pulseDamage);
+          for (let i = 0; i < 6; i++) spawnSpark(z.x, z.y, "#ffaf7f", 1.2);
+        }
+      } else if (z.variant === "blizzard") {
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+            e.hp -= z.dps * dt;
+            e.slow = Math.max(e.slow, z.slow);
+          }
+        }
+        z.burstTimer -= dt;
+        if (z.burstTimer <= 0) {
+          z.burstTimer += z.burstCd;
+          for (const e of game.enemies) {
+            if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.78 + e.r) {
+              e.hp -= z.burstDamage;
+              e.stun = Math.max(e.stun || 0, z.stun);
+            }
+          }
+          for (let i = 0; i < 7; i++) spawnSpark(z.x, z.y, "#d2f5ff", 1.1);
+        }
+      }
+    }
   }
 
   game.zones = game.zones.filter((z) => z.life > 0);
@@ -2560,6 +2754,45 @@ function drawZones() {
         ctx.fillStyle = "rgba(216, 186, 120, 0.24)";
         circle(z.x + Math.cos(a) * rr * 0.35, z.y + Math.sin(a) * rr * 0.35, 2 + i);
       }
+    } else if (z.type === "triad" && z.variant === "monsoon") {
+      const pulse = 0.75 + Math.sin(game.time * 9) * 0.2;
+      ctx.fillStyle = `rgba(115, 215, 255, ${0.18 * pulse})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(170, 240, 255, 0.68)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      drawZigZagLine(z.x - z.r * 0.5, z.y, z.x + z.r * 0.5, z.y, "rgba(210, 250, 255, 0.55)", 1.5);
+    } else if (z.type === "triad" && z.variant === "sandglass") {
+      const spin = game.time * 2.6;
+      ctx.fillStyle = "rgba(255, 205, 125, 0.2)";
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(255, 176, 110, 0.62)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      for (let i = 0; i < 4; i++) {
+        const a = spin + i * (Math.PI * 0.5);
+        drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.72, z.y + Math.sin(a) * z.r * 0.72, "rgba(255, 145, 95, 0.62)", 1.2);
+      }
+    } else if (z.type === "triad" && z.variant === "mudflow") {
+      const wobble = Math.sin(game.time * 5.5) * 0.18;
+      ctx.fillStyle = `rgba(208, 122, 86, ${0.22 + wobble * 0.08})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(255, 182, 130, 0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = "rgba(120, 80, 58, 0.18)";
+      circle(z.x + 4, z.y - 3, z.r * 0.52);
+    } else if (z.type === "triad" && z.variant === "blizzard") {
+      const chill = 0.75 + Math.sin(game.time * 7.2) * 0.15;
+      ctx.fillStyle = `rgba(180, 235, 255, ${0.2 * chill})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(220, 248, 255, 0.74)";
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      for (let i = 0; i < 6; i++) {
+        const a = i * (Math.PI / 3) + game.time * 0.7;
+        drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.62, z.y + Math.sin(a) * z.r * 0.62, "rgba(215,245,255,0.45)", 1);
+      }
     }
   }
 }
@@ -2579,6 +2812,10 @@ function getSynergyStateTag(key) {
   if (key === "chain") return "FORK";
   if (key === "quicksand") return "PULL+CRUSH";
   if (key === "magma") return "ERUPT";
+  if (key === "monsoon") return "GALE+SURGE";
+  if (key === "sandglass") return "SEAR+SNARE";
+  if (key === "mudflow") return "PULL+BURST";
+  if (key === "blizzard") return "FREEZE+SHOCK";
   return "";
 }
 
@@ -2588,6 +2825,10 @@ function getSynergyTagColors(key) {
   if (key === "chain") return { bg: "rgba(160, 210, 255, 0.2)", line: "rgba(195, 235, 255, 0.65)", text: "#e2f6ff" };
   if (key === "quicksand") return { bg: "rgba(200, 165, 95, 0.24)", line: "rgba(230, 200, 130, 0.65)", text: "#ffe6b8" };
   if (key === "magma") return { bg: "rgba(255, 120, 80, 0.22)", line: "rgba(255, 170, 130, 0.68)", text: "#ffd2bf" };
+  if (key === "monsoon") return { bg: "rgba(112, 214, 255, 0.24)", line: "rgba(177, 240, 255, 0.7)", text: "#d2f6ff" };
+  if (key === "sandglass") return { bg: "rgba(255, 186, 122, 0.24)", line: "rgba(255, 221, 168, 0.7)", text: "#ffe8c8" };
+  if (key === "mudflow") return { bg: "rgba(217, 134, 95, 0.24)", line: "rgba(252, 184, 148, 0.68)", text: "#ffe0d1" };
+  if (key === "blizzard") return { bg: "rgba(170, 225, 255, 0.24)", line: "rgba(220, 247, 255, 0.75)", text: "#ecfaff" };
   return { bg: "rgba(122, 232, 216, 0.16)", line: "rgba(122, 232, 216, 0.55)", text: "#9ef3e7" };
 }
 
@@ -2595,19 +2836,10 @@ function drawPowerBar() {
   if (!game.powers) return;
   powerBarBoxes = [];
 
-  // Determine active combos and consumed base skills
-  const consumed = new Set();
-  const activeComboKeys = [];
-  if (game.magmaUnlocked && game.powers.magma && game.powers.magma.unlocked) {
-    activeComboKeys.push("magma"); consumed.add("fire"); consumed.add("earth");
-  }
-  for (const def of COMBO_DEFS) {
-    if (consumed.has(def.a) || consumed.has(def.b)) continue;
-    const pa = game.powers[def.a], pb = game.powers[def.b];
-    if (pa && pb && pa.unlocked && pb.unlocked && pa.level >= def.minLevel && pb.level >= def.minLevel) {
-      activeComboKeys.push(def.key); consumed.add(def.a); consumed.add(def.b);
-    }
-  }
+  const fusion = getActiveFusionState();
+  const consumed = fusion.consumed;
+  const activeComboKeys = fusion.activeComboKeys;
+  const sourcesByKey = fusion.sourcesByKey;
 
   // Build display list: base powers not consumed + active combos
   const displayKeys = [];
@@ -2626,6 +2858,16 @@ function drawPowerBar() {
       if (!mergeHints[def.b]) mergeHints[def.b] = hint;
     }
   }
+  for (const def of TRIPLE_COMBO_DEFS) {
+    const pa = game.powers[def.a], pb = game.powers[def.b], pc = game.powers[def.c];
+    if (pa && pb && pc && pa.unlocked && pb.unlocked && pc.unlocked &&
+        (pa.level < def.minLevel || pb.level < def.minLevel || pc.level < def.minLevel)) {
+      const hint = `→${capitalize(def.key)}@Lv${def.minLevel}`;
+      if (!mergeHints[def.a]) mergeHints[def.a] = hint;
+      if (!mergeHints[def.b]) mergeHints[def.b] = hint;
+      if (!mergeHints[def.c]) mergeHints[def.c] = hint;
+    }
+  }
 
   const BOX_W = 120, BOX_H = 46, GAP = 6;
   const totalW = displayKeys.length * BOX_W + (displayKeys.length - 1) * GAP;
@@ -2636,18 +2878,18 @@ function drawPowerBar() {
     const p = game.powers[key];
     if (!p) { x += BOX_W + GAP; continue; }
 
-    const comboDef = COMBO_DEFS.find(d => d.key === key);
-    const isCombo = !!comboDef || key === "magma";
+    const comboSources = sourcesByKey[key] || null;
+    const isCombo = !!comboSources;
     const isConsumed = consumed.has(key);
     const isActive = (isCombo && activeComboKeys.includes(key)) ||
                      (!isCombo && p.unlocked && !isConsumed && (key !== "magma" || game.magmaUnlocked));
 
     // Combo level = avg of component levels; base level = p.level
     let displayLevel = p.level;
-    if (comboDef) {
-      const la = (game.powers[comboDef.a] && game.powers[comboDef.a].level) || 1;
-      const lb = (game.powers[comboDef.b] && game.powers[comboDef.b].level) || 1;
-      displayLevel = Math.floor((la + lb) * 0.5);
+    if (comboSources && comboSources.length > 0) {
+      let total = 0;
+      for (const sourceKey of comboSources) total += (game.powers[sourceKey] && game.powers[sourceKey].level) || 1;
+      displayLevel = Math.floor(total / comboSources.length);
     }
 
     // Box
@@ -2674,17 +2916,14 @@ function drawPowerBar() {
 
     // Sub-line: combo source pair OR merge hint OR consumed-into label
     ctx.font = "9px Trebuchet MS";
-    if (isCombo && isActive && comboDef) {
+    if (isCombo && isActive && comboSources) {
       ctx.fillStyle = "#7ae8d8";
-      ctx.fillText(`${capitalize(comboDef.a)}+${capitalize(comboDef.b)}`, x + 6, y + 26);
-    } else if (isCombo && isActive && key === "magma") {
-      ctx.fillStyle = "#ff9966";
-      ctx.fillText("Fire+Earth", x + 6, y + 26);
+      ctx.fillText(comboSources.map(capitalize).join("+"), x + 6, y + 26);
     } else if (isConsumed) {
       const comboName = activeComboKeys.find(ck => {
-        const d = COMBO_DEFS.find(dd => dd.key === ck);
-        return d && (d.a === key || d.b === key);
-      }) || (key === "fire" || key === "earth" ? "magma" : null);
+        const src = sourcesByKey[ck] || [];
+        return src.includes(key);
+      }) || null;
       ctx.fillStyle = "#7ae8d866";
       ctx.fillText(comboName ? `→${capitalize(comboName)}` : "merged", x + 6, y + 26);
     } else if (!isCombo && mergeHints[key]) {
