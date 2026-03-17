@@ -94,10 +94,27 @@ const TRIPLE_COMBO_DEFS = [
   { key: "blizzard", a: "earth", b: "water", c: "wind",  minLevel: 3 },
 ];
 
+const QUAD_COMBO_DEF = { key: "cataclysm", a: "fire", b: "earth", c: "water", d: "wind", minLevel: 3 };
+
 function getActiveFusionState() {
   const consumed = new Set();
   const activeComboKeys = [];
   const sourcesByKey = {};
+
+  const qa = game.powers && game.powers[QUAD_COMBO_DEF.a];
+  const qb = game.powers && game.powers[QUAD_COMBO_DEF.b];
+  const qc = game.powers && game.powers[QUAD_COMBO_DEF.c];
+  const qd = game.powers && game.powers[QUAD_COMBO_DEF.d];
+  if (qa && qb && qc && qd && qa.unlocked && qb.unlocked && qc.unlocked && qd.unlocked &&
+      qa.level >= QUAD_COMBO_DEF.minLevel && qb.level >= QUAD_COMBO_DEF.minLevel &&
+      qc.level >= QUAD_COMBO_DEF.minLevel && qd.level >= QUAD_COMBO_DEF.minLevel) {
+    activeComboKeys.push(QUAD_COMBO_DEF.key);
+    sourcesByKey[QUAD_COMBO_DEF.key] = [QUAD_COMBO_DEF.a, QUAD_COMBO_DEF.b, QUAD_COMBO_DEF.c, QUAD_COMBO_DEF.d];
+    consumed.add(QUAD_COMBO_DEF.a);
+    consumed.add(QUAD_COMBO_DEF.b);
+    consumed.add(QUAD_COMBO_DEF.c);
+    consumed.add(QUAD_COMBO_DEF.d);
+  }
 
   for (const def of TRIPLE_COMBO_DEFS) {
     if (consumed.has(def.a) || consumed.has(def.b) || consumed.has(def.c)) continue;
@@ -529,7 +546,7 @@ function update(dt) {
 
   game.time += dt;
 
-  for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "quicksand", "monsoon", "sandglass", "mudflow", "blizzard"]) {
+  for (const key of ["arc", "fire", "earth", "water", "wind", "magma", "mist", "storm", "chain", "quicksand", "monsoon", "sandglass", "mudflow", "blizzard", "cataclysm"]) {
     if (!game.powers[key]) continue;
     game.powers[key].timer = Math.max(0, game.powers[key].timer - dt);
   }
@@ -896,6 +913,7 @@ function getCappedCastTimer(powerKey, baseCd) {
     sandglass: 2.35,
     mudflow: 2.4,
     blizzard: 2.3,
+    cataclysm: 2.8,
   };
   const maxCd = maxByPower[powerKey] || 1.8;
   return Math.max(0.16, Math.min(maxCd, baseCd * game.cooldownMul));
@@ -903,6 +921,30 @@ function getCappedCastTimer(powerKey, baseCd) {
 
 function tryCastPower(key, tx, ty, angleOffset = 0) {
   const aimed = getOffsetTarget(tx, ty, angleOffset);
+
+  if (key === "cataclysm") {
+    const cp = game.powers[key];
+    if (!cp || cp.timer > 0) return false;
+    cp.timer = getCappedCastTimer(key, cp.cd);
+    const lv = ["fire", "earth", "water", "wind"].reduce((sum, k) => sum + ((game.powers[k] && game.powers[k].level) || 1), 0) / 4;
+    if (game.zones.length >= MAX_ZONES) game.zones.shift();
+    game.zones.push({
+      type: "apex",
+      variant: "cataclysm",
+      x: aimed.x,
+      y: aimed.y,
+      r: 96 + lv * 12,
+      dps: (30 + lv * 7) * game.globalDamageMul,
+      pulseCd: 0.32,
+      pulseTimer: 0.32,
+      pulseDamage: (24 + lv * 6.2) * game.globalDamageMul,
+      stun: 0.48 + lv * 0.05,
+      slow: 0.58,
+      burn: 1.05 + lv * 0.08,
+      life: 2.8,
+    });
+    return true;
+  }
 
   const tripleDef = TRIPLE_COMBO_DEFS.find(d => d.key === key);
   if (tripleDef) {
@@ -1328,10 +1370,12 @@ function startGameWithElement(key) {
     sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
     mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
     blizzard:  { level: 0, cd: 2.1,  timer: 0, color: "#b8ecff", name: "Blizzard"  },
+    cataclysm: { level: 0, cd: 2.6,  timer: 0, color: "#f3d2ff", name: "Cataclysm" },
     monsoon:   { level: 0, cd: 2.05, timer: 0, color: "#7cd7ff", name: "Monsoon"   },
     sandglass: { level: 0, cd: 2.2,  timer: 0, color: "#ffcc88", name: "Sandglass" },
     mudflow:   { level: 0, cd: 2.25, timer: 0, color: "#d7865f", name: "Mudflow"   },
     blizzard:  { level: 0, cd: 2.1,  timer: 0, color: "#b8ecff", name: "Blizzard"  },
+    cataclysm: { level: 0, cd: 2.6,  timer: 0, color: "#f3d2ff", name: "Cataclysm" },
   };
 
   unlockPower(key, true);
@@ -2272,6 +2316,29 @@ function updateZones(dt) {
         }
       }
     }
+
+    if (z.type === "apex" && z.variant === "cataclysm") {
+      for (const e of game.enemies) {
+        if (Math.hypot(e.x - z.x, e.y - z.y) < z.r + e.r) {
+          e.hp -= z.dps * dt;
+          e.slow = Math.max(e.slow, z.slow);
+          e.burn = Math.max(e.burn, z.burn);
+        }
+      }
+
+      z.pulseTimer -= dt;
+      if (z.pulseTimer <= 0) {
+        z.pulseTimer += z.pulseCd;
+        for (const e of game.enemies) {
+          if (Math.hypot(e.x - z.x, e.y - z.y) < z.r * 0.82 + e.r) {
+            e.hp -= z.pulseDamage;
+            e.stun = Math.max(e.stun || 0, z.stun);
+          }
+        }
+        explodeAt(z.x, z.y, z.r * 0.72, z.pulseDamage * 0.6);
+        for (let i = 0; i < 10; i++) spawnSpark(z.x, z.y, "#e3b8ff", 1.45);
+      }
+    }
   }
 
   game.zones = game.zones.filter((z) => z.life > 0);
@@ -2793,6 +2860,17 @@ function drawZones() {
         const a = i * (Math.PI / 3) + game.time * 0.7;
         drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.62, z.y + Math.sin(a) * z.r * 0.62, "rgba(215,245,255,0.45)", 1);
       }
+    } else if (z.type === "apex" && z.variant === "cataclysm") {
+      const pulse = 0.78 + Math.sin(game.time * 10.5) * 0.2;
+      ctx.fillStyle = `rgba(226, 170, 255, ${0.2 * pulse})`;
+      circle(z.x, z.y, z.r);
+      ctx.strokeStyle = "rgba(248, 216, 255, 0.78)";
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+      for (let i = 0; i < 8; i++) {
+        const a = i * (Math.PI / 4) + game.time * 1.1;
+        drawZigZagLine(z.x, z.y, z.x + Math.cos(a) * z.r * 0.7, z.y + Math.sin(a) * z.r * 0.7, "rgba(255, 228, 255, 0.55)", 1.2);
+      }
     }
   }
 }
@@ -2816,6 +2894,7 @@ function getSynergyStateTag(key) {
   if (key === "sandglass") return "SEAR+SNARE";
   if (key === "mudflow") return "PULL+BURST";
   if (key === "blizzard") return "FREEZE+SHOCK";
+  if (key === "cataclysm") return "APEX";
   return "";
 }
 
@@ -2829,6 +2908,7 @@ function getSynergyTagColors(key) {
   if (key === "sandglass") return { bg: "rgba(255, 186, 122, 0.24)", line: "rgba(255, 221, 168, 0.7)", text: "#ffe8c8" };
   if (key === "mudflow") return { bg: "rgba(217, 134, 95, 0.24)", line: "rgba(252, 184, 148, 0.68)", text: "#ffe0d1" };
   if (key === "blizzard") return { bg: "rgba(170, 225, 255, 0.24)", line: "rgba(220, 247, 255, 0.75)", text: "#ecfaff" };
+  if (key === "cataclysm") return { bg: "rgba(222, 168, 255, 0.28)", line: "rgba(244, 218, 255, 0.82)", text: "#fff2ff" };
   return { bg: "rgba(122, 232, 216, 0.16)", line: "rgba(122, 232, 216, 0.55)", text: "#9ef3e7" };
 }
 
@@ -2866,6 +2946,18 @@ function drawPowerBar() {
       if (!mergeHints[def.a]) mergeHints[def.a] = hint;
       if (!mergeHints[def.b]) mergeHints[def.b] = hint;
       if (!mergeHints[def.c]) mergeHints[def.c] = hint;
+    }
+  }
+  {
+    const def = QUAD_COMBO_DEF;
+    const pa = game.powers[def.a], pb = game.powers[def.b], pc = game.powers[def.c], pd = game.powers[def.d];
+    if (pa && pb && pc && pd && pa.unlocked && pb.unlocked && pc.unlocked && pd.unlocked &&
+        (pa.level < def.minLevel || pb.level < def.minLevel || pc.level < def.minLevel || pd.level < def.minLevel)) {
+      const hint = `→${capitalize(def.key)}@Lv${def.minLevel}`;
+      if (!mergeHints[def.a]) mergeHints[def.a] = hint;
+      if (!mergeHints[def.b]) mergeHints[def.b] = hint;
+      if (!mergeHints[def.c]) mergeHints[def.c] = hint;
+      if (!mergeHints[def.d]) mergeHints[def.d] = hint;
     }
   }
 
