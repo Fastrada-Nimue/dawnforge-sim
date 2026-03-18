@@ -87,6 +87,65 @@ let powerBarBoxes = [];
 const powerOrder = ["fire", "earth", "water", "wind", "nature"];
 const basePowerOrder = ["arc", ...powerOrder];
 
+const ENEMY_TRAIT_POOLS = {
+  grunt: [
+    { id: "wet", short: "WET", color: "#82cfff", damageMul: { fire: 0.75, arc: 1.18, wind: 1.08 } },
+    { id: "bark", short: "BARK", color: "#9ccd86", damageMul: { nature: 0.72, fire: 1.22 } },
+    { id: "dust", short: "DUST", color: "#d7b07a", damageMul: { earth: 0.8, water: 1.2 } },
+  ],
+  runner: [
+    { id: "grounded", short: "GND", color: "#d8a36f", damageMul: { arc: 0.72, earth: 1.2 } },
+    { id: "kindled", short: "KIND", color: "#ff9d6d", damageMul: { fire: 1.25, water: 0.82 } },
+    { id: "gusted", short: "GUST", color: "#bdeeff", damageMul: { wind: 0.72, arc: 1.1 } },
+  ],
+  brute: [
+    { id: "armored", short: "ARM", color: "#cab999", damageMul: { earth: 0.68, arc: 0.82, water: 1.16 }, statusMul: { slow: 0.7, snare: 0.74, stun: 0.78 } },
+    { id: "volatile", short: "VOLT", color: "#ff9a74", damageMul: { fire: 1.24, water: 0.78 }, statusMul: { burn: 1.2 } },
+    { id: "rooted", short: "ROOT", color: "#98c97d", damageMul: { nature: 0.72, fire: 1.14 }, statusMul: { snare: 0.56, slow: 0.82 } },
+  ],
+  boss: [
+    { id: "phase", short: "PHASE", color: "#d7b6ff", damageMul: { arc: 0.68, earth: 1.18 }, statusMul: { stun: 0.58 } },
+    { id: "core", short: "CORE", color: "#ffb27c", damageMul: { fire: 0.65, water: 1.2 }, statusMul: { burn: 0.62 } },
+    { id: "tide", short: "TIDE", color: "#8dc8ff", damageMul: { water: 0.68, wind: 1.15 }, statusMul: { slow: 0.65, snare: 0.76 } },
+  ],
+};
+
+function rollEnemyTrait(type) {
+  const pool = ENEMY_TRAIT_POOLS[type] || ENEMY_TRAIT_POOLS.grunt;
+  const pick = pool[(Math.random() * pool.length) | 0] || null;
+  if (!pick) return null;
+  return {
+    ...pick,
+    damageMul: { ...(pick.damageMul || {}) },
+    statusMul: { ...(pick.statusMul || {}) },
+  };
+}
+
+function getEnemyDamageMul(enemy, source) {
+  if (!enemy || !enemy.trait || !source) return 1;
+  const out = enemy.trait.damageMul && enemy.trait.damageMul[source];
+  return typeof out === "number" ? out : 1;
+}
+
+function getEnemyStatusMul(enemy, statusKey) {
+  if (!enemy || !enemy.trait || !statusKey) return 1;
+  const out = enemy.trait.statusMul && enemy.trait.statusMul[statusKey];
+  return typeof out === "number" ? out : 1;
+}
+
+function applyEnemyDamage(enemy, amount, source = "arc") {
+  if (!enemy || !(amount > 0)) return 0;
+  const dealt = amount * getEnemyDamageMul(enemy, source);
+  enemy.hp -= dealt;
+  return dealt;
+}
+
+function applyEnemyStatusMax(enemy, statusKey, value) {
+  if (!enemy || !statusKey || !(value > 0)) return;
+  const scaled = value * getEnemyStatusMul(enemy, statusKey);
+  enemy[statusKey] = Math.max(enemy[statusKey] || 0, scaled);
+}
+
 // Elemental combo definitions — priority order matters; first entry wins on overlapping skills.
 // magma is unlock-gated via upgrade card and handled separately.
 const COMBO_DEFS = [
@@ -572,6 +631,7 @@ function getBossProfileForWave(wave) {
 
 function spawnBossEnemy() {
   const profile = getBossProfileForWave(game.wave);
+  const trait = rollEnemyTrait("boss");
   game.enemies.push({
     type: "boss",
     x: WIDTH * 0.5,
@@ -587,6 +647,7 @@ function spawnBossEnemy() {
     hitFlash: 0,
     critFlash: 0,
     lastRenderHp: 0,
+    trait,
     burn: 0, slow: 0, stun: 0, snare: 0,
   });
   game.bossSpawnedThisWave = true;
@@ -730,6 +791,7 @@ function spawnEnemy() {
           hitFlash: 0,
           critFlash: 0,
           lastRenderHp: 0,
+          trait: rollEnemyTrait(type),
           prevX: 0,
           prevY: 0,
           burn: 0, slow: 0, stun: 0, snare: 0,
@@ -749,6 +811,7 @@ function spawnEnemy() {
           hitFlash: 0,
           critFlash: 0,
           lastRenderHp: 0,
+          trait: rollEnemyTrait(type),
           prevX: 0,
           prevY: 0,
           stompTimer: 0.2 + Math.random() * 0.16,
@@ -768,6 +831,7 @@ function spawnEnemy() {
           hitFlash: 0,
           critFlash: 0,
           lastRenderHp: 0,
+          trait: rollEnemyTrait(type),
           prevX: 0,
           prevY: 0,
           burn: 0, slow: 0, stun: 0, snare: 0,
@@ -836,7 +900,7 @@ function updateEnemies(dt) {
 
     if (e.burn > 0) {
       const burnDps = (10 + game.powers.fire.level * 5) * game.powers.fire.burnDamageMul;
-      e.hp -= burnDps * dt;
+      applyEnemyDamage(e, burnDps * dt, "fire");
       e.burn -= dt;
       spawnSpark(e.x, e.y, "#ff9966", 1);
     }
@@ -878,8 +942,8 @@ function updateProjectiles(dt) {
       for (const e of game.enemies) {
         if (Math.hypot(e.x - p.x, e.y - p.y) < e.r + p.r) {
           const dmg = (26 + game.powers.earth.level * 10) * game.globalDamageMul * game.powers.earth.damageMul;
-          e.hp -= dmg;
-          e.slow = Math.max(e.slow, 0.8 + game.powers.earth.level * 0.2 + game.powers.earth.slowBonus);
+          applyEnemyDamage(e, dmg, "earth");
+          applyEnemyStatusMax(e, "slow", 0.8 + game.powers.earth.level * 0.2 + game.powers.earth.slowBonus);
           p.life = 0;
           break;
         }
@@ -889,7 +953,7 @@ function updateProjectiles(dt) {
     if (p.type === "arcBolt") {
       for (const e of game.enemies) {
         if (Math.hypot(e.x - p.x, e.y - p.y) < e.r + p.r) {
-          e.hp -= p.damage;
+          applyEnemyDamage(e, p.damage, "arc");
           spawnSpark(e.x, e.y, "#d6ecff", 1.1);
 
           if (p.forks > 0 && game.projectiles.length < MAX_PROJECTILES) {
@@ -1717,17 +1781,17 @@ function explodeFire(x, y) {
   explodeAt(x, y, r, dmg);
   for (const e of game.enemies) {
     if (Math.hypot(e.x - x, e.y - y) < r + e.r) {
-      e.burn = Math.max(e.burn, 1.1 + p.level * 0.3 + p.burnDurationBonus);
+      applyEnemyStatusMax(e, "burn", 1.1 + p.level * 0.3 + p.burnDurationBonus);
     }
   }
 }
 
-function explodeAt(x, y, radius, damage) {
+function explodeAt(x, y, radius, damage, source = "fire") {
   for (const e of game.enemies) {
     const d = Math.hypot(e.x - x, e.y - y);
     if (d < radius + e.r) {
       const falloff = 1 - Math.min(0.85, d / radius);
-      e.hp -= damage * Math.max(0.2, falloff);
+      applyEnemyDamage(e, damage * Math.max(0.2, falloff), source);
     }
   }
   for (let i = 0; i < 14; i++) spawnSpark(x, y, "#ff9f70", 2.6);
@@ -4259,6 +4323,21 @@ function drawEnemies() {
     ctx.fillRect(e.x - e.r, e.y - e.r - 8, e.r * 2, 4);
     ctx.fillStyle = "#f07f7f";
     ctx.fillRect(e.x - e.r, e.y - e.r - 8, e.r * 2 * r, 4);
+
+    if (e.trait && e.trait.short) {
+      const tag = e.trait.short;
+      const tagW = Math.min(34, 8 + tag.length * 4);
+      const tx = e.x + e.r - tagW;
+      const ty = e.y - e.r - 17;
+      ctx.fillStyle = "rgba(12, 16, 24, 0.82)";
+      ctx.fillRect(tx, ty, tagW, 8);
+      ctx.strokeStyle = (e.trait.color || "#9fb7d6") + "cc";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(tx, ty, tagW, 8);
+      ctx.fillStyle = e.trait.color || "#d9e8ff";
+      ctx.font = "bold 6px Trebuchet MS";
+      ctx.fillText(tag, tx + 2, ty + 6);
+    }
   }
 }
 
