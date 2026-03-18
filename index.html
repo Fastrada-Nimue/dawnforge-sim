@@ -417,6 +417,78 @@
         font-size: 15px;
       }
     }
+    #test-synergy-btn {
+      position: fixed;
+      bottom: 12px;
+      left: 12px;
+      z-index: 100;
+      background: #6b4c1e;
+      border: 1px solid #8b6f1f;
+      color: #ffd98e;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    #test-synergy-btn:hover {
+      filter: brightness(1.2);
+    }
+    #test-synergy-panel {
+      position: fixed;
+      bottom: 60px;
+      left: 12px;
+      z-index: 99;
+      border: 1px solid #7d6a3d;
+      background: rgba(30, 26, 15, 0.98);
+      border-radius: 10px;
+      padding: 12px;
+      width: 280px;
+      max-height: 400px;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      display: none;
+    }
+    #test-synergy-panel.visible {
+      display: block;
+    }
+    #test-synergy-panel h4 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      color: #ffd98e;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .test-synergy-group {
+      margin-bottom: 12px;
+    }
+    .test-synergy-group > div {
+      font-size: 11px;
+      color: #e0a86a;
+      margin-bottom: 6px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .test-synergy-options {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .test-synergy-option {
+      background: #2a2410;
+      border: 1px solid #5b4f2f;
+      color: #d4c5a0;
+      padding: 6px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: all 120ms ease;
+    }
+    .test-synergy-option:hover {
+      background: #3a3318;
+      border-color: #8b7a4a;
+      color: #ffd98e;
+    }
   </style>
 </head>
 <body>
@@ -479,6 +551,23 @@
     </aside>
   </div>
 
-  <script defer src="./src/main.js?v=20260317q"></script>
+  <button id="test-synergy-btn" title="Test Synergies">⚗ TEST</button>
+  <div id="test-synergy-panel">
+    <h4>Test Synergies</h4>
+    <div class="test-synergy-group">
+      <div>Pair Combos</div>
+      <div class="test-synergy-options" id="test-pair-options"></div>
+    </div>
+    <div class="test-synergy-group">
+      <div>Triple Combos</div>
+      <div class="test-synergy-options" id="test-triple-options"></div>
+    </div>
+    <div class="test-synergy-group">
+      <div>Apex Combos</div>
+      <div class="test-synergy-options" id="test-apex-options"></div>
+    </div>
+  </div>
+
+  <script defer src="./src/main.js?v=20260318a"></script>
 </body>
 </html>
