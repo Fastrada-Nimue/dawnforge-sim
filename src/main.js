@@ -146,6 +146,41 @@ function applyEnemyStatusMax(enemy, statusKey, value) {
   enemy[statusKey] = Math.max(enemy[statusKey] || 0, scaled);
 }
 
+
+// Wave Mutators
+const WAVE_MUTATOR_POOL = [
+  { id: "horde",      name: "Horde",       desc: "Far more enemies this wave.",
+    spawnCountMul: 1.7, spawnIntervalMul: 0.72 },
+  { id: "swift",      name: "Swift",       desc: "Enemies move significantly faster.",
+    enemySpeedMul: 1.38 },
+  { id: "armored",    name: "Armored",     desc: "Enemies have extra HP.",
+    enemyHpMul: 1.45 },
+  { id: "vicious",    name: "Vicious",     desc: "Enemies deal more damage.",
+    enemyDamageMul: 1.35 },
+  { id: "relentless", name: "Relentless",  desc: "Enemies spawn faster.",
+    spawnIntervalMul: 0.60 },
+  { id: "fortified",  name: "Fortified",   desc: "Boss has reinforced HP.",
+    bossHpMul: 1.55 },
+  { id: "enraged",    name: "Enraged",     desc: "Boss is faster and hits harder.",
+    bossSpeedMul: 1.28, bossDamageMul: 1.28 },
+];
+
+function rollWaveMutator(wave, isBoss) {
+  if (wave <= 2) return null;
+  const pool = WAVE_MUTATOR_POOL.filter(m => {
+    if (isBoss) return m.id === "fortified" || m.id === "enraged";
+    return m.id !== "fortified" && m.id !== "enraged";
+  });
+  if (!isBoss && Math.random() < 0.38) return null;
+  return pool[(Math.random() * pool.length) | 0] || null;
+}
+
+function getWaveMutatorMul(key) {
+  const m = game.activeWaveMutator;
+  if (!m || typeof m[key] !== "number") return 1;
+  return m[key];
+}
+
 // Elemental combo definitions — priority order matters; first entry wins on overlapping skills.
 // magma is unlock-gated via upgrade card and handled separately.
 const COMBO_DEFS = [
@@ -547,6 +582,7 @@ function startGame() {
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
+  game.activeWaveMutator = null;
   game.level = 0;
   game.xp = 0;
   game.pendingLevelChoices = 0;
@@ -581,16 +617,21 @@ function startGame() {
 
 function nextWave() {
   game.wave += 1;
+  const bossWave = game.wave % BOSS_WAVE_INTERVAL === 0;
+  game.activeWaveMutator = rollWaveMutator(game.wave, bossWave);
+  const m = game.activeWaveMutator;
+  const mutatorTag = m ? ` [${m.name}]` : '';
 
-  if (game.wave % BOSS_WAVE_INTERVAL === 0) {
+  if (bossWave) {
     game.spawnLeft = 0;
     game.spawnInterval = 0;
     game.spawnTimer = 0;
     game.bossPrep = true;
     game.bossPrepTimer = BOSS_WARNING_SECONDS;
     game.bossSpawnedThisWave = false;
-    feed(`Wave ${game.wave} is a boss wave. Brace for impact.`);
-    setToast(`Boss incoming in ${BOSS_WARNING_SECONDS}s.`, "danger");
+    const mutMsg = m ? ` Mutator: ${m.name} — ${m.desc}` : '';
+    feed(`Wave ${game.wave} is a boss wave. Brace for impact.${mutMsg}`);
+    setToast(`Boss incoming in ${BOSS_WARNING_SECONDS}s.${mutatorTag}`, "danger");
     return;
   }
 
@@ -598,10 +639,15 @@ function nextWave() {
   game.spawnLeft = Math.max(5, Math.round(6 + game.wave * 3 - earlyEase * 2));
   game.spawnInterval = Math.max(0.28, 1.02 - game.wave * 0.05 + earlyEase * 0.16);
   game.spawnTimer = 0.65 + earlyEase * 0.4;
+  game.spawnLeft     = Math.max(4, Math.round(game.spawnLeft * getWaveMutatorMul('spawnCountMul')));
+  game.spawnInterval = Math.max(0.2,  game.spawnInterval * getWaveMutatorMul('spawnIntervalMul'));
+  game.spawnTimer    = Math.max(0.16, game.spawnTimer    * getWaveMutatorMul('spawnIntervalMul'));
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
-  feed(`Wave ${game.wave} begins. Enemies incoming from the north.`);
+  const mutMsg = m ? ` Mutator: ${m.name} — ${m.desc}` : '';
+  feed(`Wave ${game.wave} begins. Enemies incoming from the north.${mutMsg}`);
+  setToast(`Wave ${game.wave}${mutatorTag}`, "good");
 }
 
 function getEarlyWaveEase() {
@@ -621,9 +667,9 @@ function getBossProfileForWave(wave) {
   const waveBonus = Math.max(0, wave - BOSS_WAVE_INTERVAL);
   return {
     tier,
-    hp: 820 + tier * 420 + waveBonus * 55,
-    speed: 25 + tier * 4 + waveBonus * 0.5,
-    damage: 48 + tier * 18 + waveBonus * 1.6,
+    hp: (820 + tier * 420 + waveBonus * 55) * getWaveMutatorMul('bossHpMul'),
+    speed: (25 + tier * 4 + waveBonus * 0.5) * getWaveMutatorMul('bossSpeedMul'),
+    damage: (48 + tier * 18 + waveBonus * 1.6) * getWaveMutatorMul('bossDamageMul'),
     radius: 31 + tier * 3,
     color: tier >= 2 ? "#ff5ea9" : "#c264ff",
   };
@@ -770,6 +816,9 @@ function spawnEnemy() {
   if (game.wave >= 4 && (roll > 0.97 || (game.wave >= 6 && Math.random() > 0.9))) type = "brute";
 
   const scale = (1 + Math.max(0, game.wave - 1) * 0.1) * (1 - earlyEase * 0.08);
+  const mHp  = getWaveMutatorMul('enemyHpMul');
+  const mSpd = getWaveMutatorMul('enemySpeedMul');
+  const mDmg = getWaveMutatorMul('enemyDamageMul');
 
   const runnerBounds = getLaneBounds(13);
   const bruteBounds = getLaneBounds(20);
@@ -782,10 +831,10 @@ function spawnEnemy() {
           x: runnerBounds.left + Math.random() * Math.max(1, runnerBounds.right - runnerBounds.left),
           y: -38,
           r: 13,
-          hp: 54 * scale,
-          maxHp: 54 * scale,
-          speed: (76 + game.wave * 6) * (1 - earlyEase * 0.18),
-          damage: (14 + game.wave * 1.4) * (1 - earlyEase * 0.12),
+          hp: 54 * scale * mHp,
+          maxHp: 54 * scale * mHp,
+          speed: (76 + game.wave * 6) * (1 - earlyEase * 0.18) * mSpd,
+          damage: (14 + game.wave * 1.4) * (1 - earlyEase * 0.12) * mDmg,
           atkCd: 0,
           color: "#9ae2ff",
           hitFlash: 0,
@@ -802,10 +851,10 @@ function spawnEnemy() {
           x: bruteBounds.left + Math.random() * Math.max(1, bruteBounds.right - bruteBounds.left),
           y: -34,
           r: 20,
-          hp: 190 * scale,
-          maxHp: 190 * scale,
-          speed: (34 + game.wave * 2.6) * (1 - earlyEase * 0.1),
-          damage: (38 + game.wave * 3) * (1 - earlyEase * 0.08),
+          hp: 190 * scale * mHp,
+          maxHp: 190 * scale * mHp,
+          speed: (34 + game.wave * 2.6) * (1 - earlyEase * 0.1) * mSpd,
+          damage: (38 + game.wave * 3) * (1 - earlyEase * 0.08) * mDmg,
           atkCd: 0,
           color: "#de9467",
           hitFlash: 0,
@@ -822,10 +871,10 @@ function spawnEnemy() {
           x: gruntBounds.left + Math.random() * Math.max(1, gruntBounds.right - gruntBounds.left),
           y: -36,
           r: 15,
-          hp: 88 * scale,
-          maxHp: 88 * scale,
-          speed: (46 + game.wave * 3.5) * (1 - earlyEase * 0.16),
-          damage: (20 + game.wave * 2) * (1 - earlyEase * 0.14),
+          hp: 88 * scale * mHp,
+          maxHp: 88 * scale * mHp,
+          speed: (46 + game.wave * 3.5) * (1 - earlyEase * 0.16) * mSpd,
+          damage: (20 + game.wave * 2) * (1 - earlyEase * 0.14) * mDmg,
           atkCd: 0,
           color: "#e17f7f",
           hitFlash: 0,
@@ -3859,7 +3908,8 @@ function updateUi() {
     }
   }
   
-  ui.room.textContent = `${waveDisplay} (Lv ${game.level})`;
+  const mutHud = game.activeWaveMutator ? ` [${game.activeWaveMutator.name}]` : '';
+  ui.room.textContent = `${waveDisplay}${mutHud} (Lv ${game.level})`;
 
   const wallHp = game.wall ? `${Math.max(0, game.wall.hp).toFixed(0)} / ${game.wall.maxHp.toFixed(0)}` : "-";
   ui.hp.textContent = wallHp;
