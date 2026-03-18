@@ -449,11 +449,13 @@ const game = {
   zones: [],
   sparks: [],
   spawnLeft: 0,
+  spawnTotal: 0,
   spawnTimer: 0,
   spawnInterval: 0.8,
   bossPrep: false,
   bossPrepTimer: 0,
   bossSpawnedThisWave: false,
+  eliteSpawnedThisWave: false,
   kills: 0,
   runEssence: 0,
   globalDamageMul: 1,
@@ -704,6 +706,8 @@ function startGame() {
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
+  game.eliteSpawnedThisWave = false;
+  game.spawnTotal = 0;
   game.activeWaveMutator = null;
   game.plannedWaveMutatorWave = null;
   game.plannedWaveMutator = null;
@@ -754,11 +758,13 @@ function nextWave() {
 
   if (bossWave) {
     game.spawnLeft = 0;
+    game.spawnTotal = 0;
     game.spawnInterval = 0;
     game.spawnTimer = 0;
     game.bossPrep = true;
     game.bossPrepTimer = BOSS_WARNING_SECONDS;
     game.bossSpawnedThisWave = false;
+    game.eliteSpawnedThisWave = false;
     const mutMsg = m ? ` Mutator: ${m.name} — ${m.desc}` : '';
     feed(`Wave ${game.wave} is a boss wave. Brace for impact.${mutMsg}`);
     setToast(`Boss incoming in ${BOSS_WARNING_SECONDS}s.${mutatorTag}`, "danger");
@@ -770,11 +776,13 @@ function nextWave() {
   game.spawnInterval = Math.max(0.28, 1.02 - game.wave * 0.05 + earlyEase * 0.16);
   game.spawnTimer = 0.65 + earlyEase * 0.4;
   game.spawnLeft     = Math.max(4, Math.round(game.spawnLeft * getWaveMutatorMul('spawnCountMul')));
+  game.spawnTotal = game.spawnLeft;
   game.spawnInterval = Math.max(0.2,  game.spawnInterval * getWaveMutatorMul('spawnIntervalMul'));
   game.spawnTimer    = Math.max(0.16, game.spawnTimer    * getWaveMutatorMul('spawnIntervalMul'));
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
+  game.eliteSpawnedThisWave = false;
   const mutMsg = m ? ` Mutator: ${m.name} — ${m.desc}` : '';
   feed(`Wave ${game.wave} begins. Enemies incoming from the north.${mutMsg}`);
   setToast(`Wave ${game.wave}${mutatorTag}`, "good");
@@ -950,6 +958,10 @@ function spawnEnemy() {
   const mSpd = getWaveMutatorMul('enemySpeedMul');
   const mDmg = getWaveMutatorMul('enemyDamageMul');
 
+  const canSpawnElite = game.wave >= 5 && !isBossWave(game.wave) && !game.eliteSpawnedThisWave;
+  const eliteTriggerLeft = Math.max(2, Math.round((game.spawnTotal || game.spawnLeft || 0) * 0.45));
+  const makeElite = canSpawnElite && game.spawnLeft === eliteTriggerLeft;
+
   const runnerBounds = getLaneBounds(13);
   const bruteBounds = getLaneBounds(20);
   const gruntBounds = getLaneBounds(15);
@@ -1015,6 +1027,22 @@ function spawnEnemy() {
           prevY: 0,
           burn: 0, slow: 0, stun: 0, snare: 0,
         };
+
+  if (makeElite) {
+    const eliteTier = 1 + Math.floor(Math.max(0, game.wave - 1) / BOSS_WAVE_INTERVAL);
+    enemy.isElite = true;
+    enemy.eliteTier = eliteTier;
+    enemy.r *= 1.12;
+    enemy.maxHp *= 1.85 + eliteTier * 0.15;
+    enemy.hp = enemy.maxHp;
+    enemy.speed *= 1.1 + eliteTier * 0.04;
+    enemy.damage *= 1.28 + eliteTier * 0.08;
+    enemy.color = "#ffd28a";
+    game.eliteSpawnedThisWave = true;
+    feed(`Elite ${capitalize(enemy.type)} entered the lane.`);
+    setToast(`Elite sighted on wave ${game.wave}!`, "danger");
+    for (let i = 0; i < 10; i++) spawnSpark(enemy.x, enemy.y + Math.random() * 8, "#ffd899", 1.2);
+  }
 
   enemy.prevX = enemy.x;
   enemy.prevY = enemy.y;
@@ -1098,10 +1126,21 @@ function updateEnemies(dt) {
     game.kills += killed;
     const essenceMul = 1 + game.meta.defeatUpgrades.essenceBoost * 0.1;
     let essenceGain = 0;
-    for (const enemy of defeated) essenceGain += ESSENCE_BY_TYPE[enemy.type] || ESSENCE_BY_TYPE.grunt;
+    for (const enemy of defeated) {
+      const baseEssence = ESSENCE_BY_TYPE[enemy.type] || ESSENCE_BY_TYPE.grunt;
+      const eliteBonus = enemy.isElite ? (2 + (enemy.eliteTier || 1) * 0.35) : 1;
+      essenceGain += baseEssence * eliteBonus;
+    }
     game.runEssence += essenceGain * essenceMul;
     let xpGain = 0;
-    for (const enemy of defeated) xpGain += XP_BY_TYPE[enemy.type] || XP_BY_TYPE.grunt;
+    let eliteKills = 0;
+    for (const enemy of defeated) {
+      const baseXp = XP_BY_TYPE[enemy.type] || XP_BY_TYPE.grunt;
+      const eliteBonus = enemy.isElite ? (2.2 + (enemy.eliteTier || 1) * 0.4) : 1;
+      xpGain += baseXp * eliteBonus;
+      if (enemy.isElite) eliteKills += 1;
+    }
+    if (eliteKills > 0) setToast(`Elite defeated! +${eliteKills} bonus reward target down.`, "good");
     gainXp(xpGain);
   }
 }
@@ -2297,6 +2336,8 @@ function startGameWithElement(key) {
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
+  game.eliteSpawnedThisWave = false;
+  game.spawnTotal = 0;
   game.activeWaveMutator = null;
   game.plannedWaveMutatorWave = null;
   game.plannedWaveMutator = null;
@@ -4595,6 +4636,17 @@ function drawEnemies() {
       circle(e.x, e.y, e.r);
     }
 
+    if (e.isElite) {
+      const pulse = 0.68 + Math.sin(game.time * 5.4 + e.r) * 0.22;
+      ctx.globalAlpha = 0.22 + pulse * 0.24;
+      ctx.strokeStyle = "rgba(255, 214, 138, 0.95)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.r + 5 + pulse * 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
     // Core and shadow make enemies feel less flat.
     ctx.fillStyle = "rgba(20, 12, 12, 0.2)";
     circle(e.x + 2, e.y + 2, Math.max(2.6, e.r * 0.56));
@@ -4620,7 +4672,7 @@ function drawEnemies() {
     const r = Math.max(0, e.hp / e.maxHp);
     ctx.fillStyle = "#2d1010";
     ctx.fillRect(e.x - e.r, e.y - e.r - 8, e.r * 2, 4);
-    ctx.fillStyle = "#f07f7f";
+    ctx.fillStyle = e.isElite ? "#ffd28a" : "#f07f7f";
     ctx.fillRect(e.x - e.r, e.y - e.r - 8, e.r * 2 * r, 4);
 
     if (e.trait && e.trait.short) {
@@ -4634,6 +4686,20 @@ function drawEnemies() {
       ctx.lineWidth = 1;
       ctx.strokeRect(tx, ty, tagW, 8);
       ctx.fillStyle = e.trait.color || "#d9e8ff";
+      ctx.font = "bold 6px Trebuchet MS";
+      ctx.fillText(tag, tx + 2, ty + 6);
+    }
+    if (e.isElite) {
+      const tag = "ELITE";
+      const tx = e.x - e.r;
+      const ty = e.y - e.r - 18;
+      const w = 20;
+      ctx.fillStyle = "rgba(20, 14, 8, 0.88)";
+      ctx.fillRect(tx, ty, w, 8);
+      ctx.strokeStyle = "rgba(255, 214, 138, 0.92)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(tx, ty, w, 8);
+      ctx.fillStyle = "#ffe0a4";
       ctx.font = "bold 6px Trebuchet MS";
       ctx.fillText(tag, tx + 2, ty + 6);
     }
