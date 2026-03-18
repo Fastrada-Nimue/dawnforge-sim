@@ -3196,12 +3196,34 @@ function generateUpgradeChoices() {
     });
   }
 
+  const getUsedInPairCombo = () => {
+    const used = new Set();
+    for (const [defKey, isUnlocked] of Object.entries(game.pairFusionUnlocked || {})) {
+      if (isUnlocked) {
+        const def = COMBO_DEFS.find(d => d.key === defKey);
+        if (def) {
+          used.add(def.a);
+          used.add(def.b);
+        }
+      }
+    }
+    if (game.magmaUnlocked) {
+      used.add("fire");
+      used.add("earth");
+    }
+    return used;
+  };
+
+  const usedInPair = getUsedInPairCombo();
+
   for (const def of COMBO_DEFS) {
     if (game.pairFusionUnlocked && game.pairFusionUnlocked[def.key]) continue;
     const pa = game.powers[def.a];
     const pb = game.powers[def.b];
     if (!pa || !pb || !pa.unlocked || !pb.unlocked) continue;
     if (pa.level < def.minLevel || pb.level < def.minLevel) continue;
+    // Prevent pair combos if either element is already used in another pair combo
+    if (usedInPair.has(def.a) || usedInPair.has(def.b)) continue;
 
     specialUnlockPool.push({
       name: `Awaken ${capitalize(def.key)}`,
@@ -3241,7 +3263,10 @@ function generateUpgradeChoices() {
     });
   }
 
-  const magmaEligible = game.powers.fire.unlocked && game.powers.earth.unlocked && game.powers.fire.level >= 3 && game.powers.earth.level >= 3 && !game.magmaUnlocked;
+  const magmaEligible = game.powers.fire.unlocked && game.powers.earth.unlocked && 
+                        game.powers.fire.level >= 3 && game.powers.earth.level >= 3 && 
+                        !game.magmaUnlocked &&
+                        !usedInPair.has("fire") && !usedInPair.has("earth");
   if (magmaEligible) {
     specialUnlockPool.push({
       name: "Awaken Magma",
