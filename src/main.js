@@ -5791,7 +5791,35 @@ function testUnlockAndCastCombo(key, type) {
   console.log(`[TEST] Unlocked and cast ${key}`);
 }
 
-// Initialize test panel when game loads
-window.addEventListener("load", () => {
-  setTimeout(initTestSynergyPanel, 500);
-});
+// Initialize test panel - try multiple timing strategies
+(function() {
+  console.log("[TEST] Test panel script loading...");
+  
+  function doInit() {
+    console.log("[TEST] Initializing test panel, checking for elements...");
+    const btn = document.getElementById("test-synergy-btn");
+    const panel = document.getElementById("test-synergy-panel");
+    if (!btn || !panel) {
+      console.warn("[TEST] Buttons not found in DOM yet");
+      return false;
+    }
+    console.log("[TEST] Found test elements, attaching listeners...");
+    initTestSynergyPanel();
+    console.log("[TEST] Test panel initialized!");
+    return true;
+  }
+  
+  // Try immediately
+  if (!doInit()) {
+    // Try on DOMContentLoaded
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", doInit);
+    }
+    // Try on load
+    window.addEventListener("load", doInit);
+    // Try with timeouts
+    setTimeout(doInit, 100);
+    setTimeout(doInit, 500);
+    setTimeout(doInit, 1000);
+  }
+})();
