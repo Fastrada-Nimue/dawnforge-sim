@@ -181,6 +181,124 @@ function getWaveMutatorMul(key) {
   return m[key];
 }
 
+
+function getWaveMutatorMulFrom(mutator, key) {
+  if (!mutator || typeof mutator[key] !== "number") return 1;
+  return mutator[key];
+}
+
+function estimateEnemyMixText(waveNum) {
+  if (waveNum < 2) return "Mostly grunts";
+  if (waveNum < 4) return "Grunts with occasional runners";
+  if (waveNum < 7) return "Mixed grunts, runners, and a few brutes";
+  if (waveNum < 12) return "Balanced mix with frequent brutes";
+  return "Dense mixed waves with sustained brute pressure";
+}
+
+function buildUpcomingWavePreview(nextWaveNum) {
+  const bossWave = isBossWave(nextWaveNum);
+  const plannedMutator = game.plannedWaveMutatorWave === nextWaveNum ? game.plannedWaveMutator : null;
+  const mutatorName = plannedMutator ? plannedMutator.name : "Unknown";
+
+  if (bossWave) {
+    const bossTier = getBossTierFromWave(nextWaveNum);
+    return {
+      title: `Boss Level ${bossTier}`,
+      detail: `Single elite boss expected. Mutator: ${mutatorName}.`,
+      short: plannedMutator
+        ? `Planner: Boss ${bossTier} with ${plannedMutator.name}`
+        : `Planner: Boss ${bossTier}, mutator unscouted`,
+    };
+  }
+
+  const ease = Math.max(0, 4 - nextWaveNum) / 3;
+  let spawnCount = Math.max(5, Math.round(6 + nextWaveNum * 3 - ease * 2));
+  let spawnInterval = Math.max(0.28, 1.02 - nextWaveNum * 0.05 + ease * 0.16);
+
+  spawnCount = Math.max(4, Math.round(spawnCount * getWaveMutatorMulFrom(plannedMutator, "spawnCountMul")));
+  spawnInterval = Math.max(0.2, spawnInterval * getWaveMutatorMulFrom(plannedMutator, "spawnIntervalMul"));
+
+  const tier = Math.ceil(nextWaveNum / BOSS_WAVE_INTERVAL);
+  const levelInTier = ((nextWaveNum - 1) % BOSS_WAVE_INTERVAL) + 1;
+  return {
+    title: `Tier ${tier}, Level ${levelInTier}`,
+    detail: `${spawnCount} enemies, est. ${spawnInterval.toFixed(2)}s spawn cadence. ${estimateEnemyMixText(nextWaveNum)}. Mutator: ${mutatorName}.`,
+    short: plannedMutator
+      ? `Planner: ${spawnCount} enemies at ${spawnInterval.toFixed(2)}s, ${plannedMutator.name}`
+      : `Planner: ${spawnCount} enemies at ${spawnInterval.toFixed(2)}s, mutator unscouted`,
+  };
+}
+
+function getPlannerFocusOptions(limit = 3) {
+  const ordered = [];
+  const add = (key) => {
+    if (!key || ordered.includes(key)) return;
+    if (!game.powers || !game.powers[key] || !game.powers[key].unlocked) return;
+    ordered.push(key);
+  };
+
+  add(game.selectedCastKey);
+  for (const key of game.preferredElements || []) add(key);
+  add("arc");
+  for (const key of powerOrder) add(key);
+  if (game.magmaUnlocked) add("magma");
+
+  return ordered.slice(0, limit);
+}
+
+function renderWavePlannerCards(nextWaveNum) {
+  if (!ui.overlayCards) return;
+  const existing = document.getElementById("wave-planner-card");
+  if (existing) existing.remove();
+
+  const preview = buildUpcomingWavePreview(nextWaveNum);
+  const card = document.createElement("div");
+  card.id = "wave-planner-card";
+  card.className = "card";
+  card.style.cursor = "default";
+
+  const controls = document.createElement("div");
+  controls.style.marginTop = "8px";
+  controls.style.display = "flex";
+  controls.style.flexWrap = "wrap";
+  controls.style.gap = "6px";
+
+  const scoutBtn = document.createElement("button");
+  scoutBtn.className = "mini";
+  scoutBtn.textContent = game.plannedWaveMutatorWave === nextWaveNum
+    ? `Scouted: ${(game.plannedWaveMutator && game.plannedWaveMutator.name) || "None"}`
+    : "Scout Next Mutator";
+  scoutBtn.onclick = () => {
+    if (game.plannedWaveMutatorWave !== nextWaveNum) {
+      game.plannedWaveMutatorWave = nextWaveNum;
+      game.plannedWaveMutator = rollWaveMutator(nextWaveNum, isBossWave(nextWaveNum));
+      const m = game.plannedWaveMutator;
+      setToast(m ? `Scouted mutator: ${m.name}.` : "Scouted: no mutator.", "good");
+      updateUi();
+    }
+    renderWavePlannerCards(nextWaveNum);
+  };
+  controls.appendChild(scoutBtn);
+
+  for (const key of getPlannerFocusOptions(3)) {
+    const btn = document.createElement("button");
+    btn.className = "mini";
+    btn.textContent = `Focus ${capitalize(key === "arc" ? "arc" : key)}`;
+    btn.onclick = () => {
+      rememberPreferredElement(key);
+      game.selectedCastKey = key;
+      setToast(`Planner focus set to ${game.powers[key].name}.`, "good");
+      updateUi();
+      renderWavePlannerCards(nextWaveNum);
+    };
+    controls.appendChild(btn);
+  }
+
+  card.innerHTML = `<b>Wave Planner: ${preview.title}</b><br>${preview.detail}`;
+  card.appendChild(controls);
+  ui.overlayCards.prepend(card);
+}
+
 // Elemental combo definitions — priority order matters; first entry wins on overlapping skills.
 // magma is unlock-gated via upgrade card and handled separately.
 const COMBO_DEFS = [
@@ -357,6 +475,8 @@ const game = {
   unlockChainFocus: [],
   unlockChainStacks: 0,
   elementBranches: {},
+  plannedWaveMutatorWave: null,
+  plannedWaveMutator: null,
   pendingCrystalBonus: null,
   lastEndSummary: null,
   retryingBossWave: null,
@@ -585,6 +705,8 @@ function startGame() {
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
   game.activeWaveMutator = null;
+  game.plannedWaveMutatorWave = null;
+  game.plannedWaveMutator = null;
   game.level = 0;
   game.xp = 0;
   game.pendingLevelChoices = 0;
@@ -620,7 +742,13 @@ function startGame() {
 function nextWave() {
   game.wave += 1;
   const bossWave = game.wave % BOSS_WAVE_INTERVAL === 0;
-  game.activeWaveMutator = rollWaveMutator(game.wave, bossWave);
+  let planned = null;
+  if (game.plannedWaveMutatorWave === game.wave) {
+    planned = game.plannedWaveMutator || null;
+    game.plannedWaveMutatorWave = null;
+    game.plannedWaveMutator = null;
+  }
+  game.activeWaveMutator = planned || rollWaveMutator(game.wave, bossWave);
   const m = game.activeWaveMutator;
   const mutatorTag = m ? ` [${m.name}]` : '';
 
@@ -2169,6 +2297,9 @@ function startGameWithElement(key) {
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
+  game.activeWaveMutator = null;
+  game.plannedWaveMutatorWave = null;
+  game.plannedWaveMutator = null;
   game.level = 0;
   game.xp = 0;
   game.pendingLevelChoices = 0;
@@ -2324,6 +2455,7 @@ function openLevelUpDraft() {
 
 function openUpgradeDraft() {
   game.mode = "upgrade";
+  const nextWaveNum = game.wave + 1;
   game.upgradeChoices = generateUpgradeChoices();
 
   renderChoiceOverlay("Choose 1 Upgrade", game.upgradeChoices, (choice) => {
@@ -2333,6 +2465,8 @@ function openUpgradeDraft() {
       nextWave();
       updateUi();
   });
+
+  renderWavePlannerCards(nextWaveNum);
 }
 
 function getEmptyCrystalBonus() {
@@ -4037,7 +4171,10 @@ function updateUi() {
   }
 
   ui.biome.textContent = "North Siege Lane";
-  if (game.bossPrep) {
+  if (game.mode === "upgrade") {
+    const preview = buildUpcomingWavePreview(game.wave + 1);
+    ui.modifier.textContent = preview.short;
+  } else if (game.bossPrep) {
     ui.modifier.textContent = `Boss in ${Math.max(0, Math.ceil(game.bossPrepTimer))}s | XP ${Math.floor(game.xp)} / ${Math.floor(game.xpToNext)}`;
   } else {
     ui.modifier.textContent = `XP ${Math.floor(game.xp)} / ${Math.floor(game.xpToNext)}`;
