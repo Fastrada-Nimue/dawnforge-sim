@@ -3222,8 +3222,10 @@ function generateUpgradeChoices() {
     const pb = game.powers[def.b];
     if (!pa || !pb || !pa.unlocked || !pb.unlocked) continue;
     if (pa.level < def.minLevel || pb.level < def.minLevel) continue;
-    // Prevent pair combos if either element is already used in another pair combo
-    if (usedInPair.has(def.a) || usedInPair.has(def.b)) continue;
+    // Prevent pair combos if BOTH elements are already used (allow partial reuse for better card availability)
+    const aUsed = usedInPair.has(def.a);
+    const bUsed = usedInPair.has(def.b);
+    if (aUsed && bUsed) continue;  // Skip only if both are already paired
 
     specialUnlockPool.push({
       name: `Awaken ${capitalize(def.key)}`,
