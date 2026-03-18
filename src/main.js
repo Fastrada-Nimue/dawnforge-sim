@@ -489,6 +489,12 @@ const game = {
   screenShakeMag: 0,
   castPulses: [],
   ambientMotes: [],
+  recentCasts: [],
+  comboCounter: 0,
+  comboBonusTimer: 0,
+  comboMultiplier: 1,
+  recentCombos: [],
+  comboFloatingTexts: [],
   meta: loadMeta(),
 };
 setupInput();
@@ -693,6 +699,12 @@ function startGame() {
   game.sparks = [];
   game.castPulses = [];
   game.ambientMotes = [];
+  game.recentCasts = [];
+  game.comboCounter = 0;
+  game.comboBonusTimer = 0;
+  game.comboMultiplier = 1;
+  game.recentCombos = [];
+  game.comboFloatingTexts = [];
   game.kills = 0;
   game.runEssence = 0;
   game.globalDamageMul = (1 + game.meta.defeatUpgrades.damageBoost * 0.1) * (1 + carry.damageBoostPct);
@@ -889,7 +901,10 @@ function update(dt) {
 
   game.time += dt;
   game.screenShake = Math.max(0, game.screenShake - dt);
+  game.comboBonusTimer = Math.max(0, game.comboBonusTimer - dt);
+  if (game.comboBonusTimer <= 0) game.comboMultiplier = 1;
   updateCastPulses(dt);
+  updateComboFloatingTexts(dt);
   updateAmbientMotes(dt);
 
   for (const key of ["arc", "fire", "earth", "water", "wind", "nature", "magma", "mist", "storm", "chain", "plasma", "riptide", "quicksand", "overgrowth", "wildfire", "dustbloom", "bloomtide", "pollenstorm", "monsoon", "sandglass", "mudflow", "blizzard", "thornforge", "canopy", "briarstorm", "sunbloom", "cataclysm", "worldroot"]) {
@@ -1048,6 +1063,65 @@ function spawnEnemy() {
   enemy.prevY = enemy.y;
 
   game.enemies.push(enemy);
+}
+
+function getFormationClusterCenter(enemy) {
+  if (!enemy || !Array.isArray(game.enemies)) return null;
+  const clusterRange = enemy.type === "brute" ? 120 : enemy.type === "runner" ? 90 : 75;
+  const allies = game.enemies.filter((e) =>
+    e !== enemy &&
+    e.type === enemy.type &&
+    e.hp > 0 &&
+    Math.hypot(e.x - enemy.x, e.y - enemy.y) < clusterRange
+  );
+
+  if (allies.length === 0) return null;
+
+  const centerX = (allies.reduce((sum, e) => sum + e.x, enemy.x) + enemy.x) / (allies.length + 1);
+  const centerY = (allies.reduce((sum, e) => sum + e.y, enemy.y) + enemy.y) / (allies.length + 1);
+  return { x: centerX, y: centerY, count: allies.length };
+}
+
+function getBossFormationPull(enemy) {
+  if (!enemy || !Array.isArray(game.enemies)) return null;
+  if (enemy.type === "boss") return null;
+
+  const bosses = game.enemies.filter((e) => e.type === "boss" && e.hp > 0);
+  if (bosses.length === 0) return null;
+
+  const boss = bosses[0];
+  const distToBoss = Math.hypot(boss.x - enemy.x, boss.y - enemy.y);
+  const protectRange = 200;
+  if (distToBoss > protectRange) return null;
+
+  const ringDistance = boss.r + 80 + (Math.random() - 0.5) * 30;
+  const angleToEnemy = Math.atan2(enemy.y - boss.y, enemy.x - boss.x);
+  const targetX = boss.x + Math.cos(angleToEnemy) * ringDistance;
+  const targetY = boss.y + Math.sin(angleToEnemy) * ringDistance;
+  const dx = targetX - enemy.x;
+  const dy = targetY - enemy.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 15) return null;
+
+  const pullStrength = 0.18;
+  return {
+    pullX: (dx / dist) * pullStrength,
+    pullY: (dy / dist) * pullStrength,
+  };
+}
+
+function applyFormationClusteringForce(enemy, clusterInfo) {
+  if (!clusterInfo) return { pullX: 0, pullY: 0 };
+  const dx = clusterInfo.x - enemy.x;
+  const dy = clusterInfo.y - enemy.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 8) return { pullX: 0, pullY: 0 };
+
+  const clusterStrength = 0.14 + ((clusterInfo.count || 0) * 0.04);
+  return {
+    pullX: (dx / dist) * clusterStrength,
+    pullY: (dy / dist) * clusterStrength,
+  };
 }
 
 function updateEnemies(dt) {
