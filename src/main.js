@@ -356,6 +356,7 @@ const game = {
   preferredElements: [],
   unlockChainFocus: [],
   unlockChainStacks: 0,
+  elementBranches: {},
   pendingCrystalBonus: null,
   lastEndSummary: null,
   retryingBossWave: null,
@@ -579,6 +580,7 @@ function startGame() {
   game.tripleFusionUnlocked = makeFusionUnlockMap(TRIPLE_COMBO_DEFS);
   game.unlockChainFocus = [];
   game.unlockChainStacks = 0;
+  game.elementBranches = {};
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
@@ -1968,6 +1970,91 @@ function makeFusionUpgradeChoice(key, sources) {
   };
 }
 
+
+const ELEMENT_BRANCH_DEFS = {
+  assault: { name: "Assault", desc: "Higher direct damage scaling." },
+  tempo: { name: "Tempo", desc: "Faster cast rhythm with lighter hits." },
+  control: { name: "Control", desc: "Larger zones and stronger status control." },
+};
+
+function ensureElementBranchState(key) {
+  if (!key) return { path: null, depth: 0 };
+  if (!game.elementBranches) game.elementBranches = {};
+  if (!game.elementBranches[key]) game.elementBranches[key] = { path: null, depth: 0 };
+  return game.elementBranches[key];
+}
+
+function applyElementBranchBonuses(key, path, depth = 1) {
+  const power = game.powers && game.powers[key];
+  if (!power || !path) return;
+
+  if (path === "assault") {
+    if (typeof power.damageMul === "number") power.damageMul *= 1 + 0.12 + depth * 0.01;
+    if (typeof power.burnDamageMul === "number") power.burnDamageMul *= 1 + 0.1 + depth * 0.01;
+    if (typeof power.dpsMul === "number") power.dpsMul *= 1 + 0.1 + depth * 0.01;
+    if (typeof power.blastMul === "number") power.blastMul *= 1 + 0.1 + depth * 0.01;
+    return;
+  }
+
+  if (path === "tempo") {
+    const floor = key === "magma" ? 1.0 : 0.2;
+    power.cd = Math.max(floor, power.cd * Math.max(0.74, 0.84 - depth * 0.01));
+    if (typeof power.damageMul === "number") power.damageMul *= 0.97;
+    return;
+  }
+
+  if (path === "control") {
+    if (typeof power.radiusMul === "number") power.radiusMul *= 1 + 0.1 + depth * 0.01;
+    if (typeof power.areaMul === "number") power.areaMul *= 1 + 0.1 + depth * 0.01;
+    if (typeof power.widthMul === "number") power.widthMul *= 1 + 0.1 + depth * 0.01;
+    if (typeof power.durationMul === "number") power.durationMul *= 1 + 0.12 + depth * 0.01;
+    if (typeof power.slowBonus === "number") power.slowBonus += 0.1 + depth * 0.01;
+    if (typeof power.snareBonus === "number") power.snareBonus += 0.09 + depth * 0.01;
+    if (typeof power.burnDurationBonus === "number") power.burnDurationBonus += 0.16 + depth * 0.02;
+    if (typeof power.healMul === "number") power.healMul *= 1.05;
+  }
+}
+
+function makeElementBranchChoice(key, path) {
+  const branch = ELEMENT_BRANCH_DEFS[path];
+  return {
+    name: `${game.powers[key].name} Path: ${branch.name}`,
+    desc: `${branch.desc} Locks this element into the ${branch.name} path.`,
+    apply: () => {
+      const state = ensureElementBranchState(key);
+      if (state.path && state.path !== path) {
+        setToast(`${game.powers[key].name} is already specialized.`, "danger");
+        return;
+      }
+      state.path = path;
+      state.depth = Math.max(1, (state.depth || 0) + 1);
+      game.powers[key].level += 1;
+      applyElementBranchBonuses(key, path, state.depth);
+      feed(`${game.powers[key].name} specialized into ${branch.name}.`);
+      setToast(`${game.powers[key].name} path set to ${branch.name}.`, "good");
+    },
+  };
+}
+
+function makeElementBranchMasteryChoice(key) {
+  const state = ensureElementBranchState(key);
+  if (!state.path || !ELEMENT_BRANCH_DEFS[state.path]) return null;
+
+  const branch = ELEMENT_BRANCH_DEFS[state.path];
+  return {
+    name: `${game.powers[key].name} ${branch.name} Mastery`,
+    desc: `Deepen ${branch.name} path effects and gain +1 ${game.powers[key].name} level.`,
+    apply: () => {
+      const live = ensureElementBranchState(key);
+      live.depth = Math.max(1, (live.depth || 1) + 1);
+      game.powers[key].level += 1;
+      applyElementBranchBonuses(key, live.path, live.depth);
+      feed(`${game.powers[key].name} ${branch.name} path deepened (tier ${live.depth}).`);
+      setToast(`${game.powers[key].name} ${branch.name} mastery advanced.`, "good");
+    },
+  };
+}
+
 function generateLevelUpChoices() {
   const choices = [];
 
@@ -2078,6 +2165,7 @@ function startGameWithElement(key) {
   game.tripleFusionUnlocked = makeFusionUnlockMap(TRIPLE_COMBO_DEFS);
   game.unlockChainFocus = [];
   game.unlockChainStacks = 0;
+  game.elementBranches = {};
   game.bossPrep = false;
   game.bossPrepTimer = 0;
   game.bossSpawnedThisWave = false;
@@ -2946,6 +3034,30 @@ function generateUpgradeChoices() {
   }
 
   const unlockedPowers = powerOrder.filter((key) => game.powers[key].unlocked);
+
+  const selectedSources = getSourcesForPowerKey(game.selectedCastKey)
+    .filter((k) => basePowerOrder.includes(k) || k === "magma");
+  const branchTarget = selectedSources.find((k) => game.powers[k] && game.powers[k].unlocked && !consumed.has(k))
+    || ["arc", ...powerOrder, "magma"].find((k) => game.powers[k] && game.powers[k].unlocked && !consumed.has(k))
+    || null;
+
+  if (branchTarget && game.powers[branchTarget].level >= 2) {
+    const branchState = ensureElementBranchState(branchTarget);
+    if (!branchState.path) {
+      for (const path of Object.keys(ELEMENT_BRANCH_DEFS)) {
+        const choice = makeElementBranchChoice(branchTarget, path);
+        pool.push(choice);
+        elementUpgradePool.push(choice);
+      }
+    } else {
+      const masteryChoice = makeElementBranchMasteryChoice(branchTarget);
+      if (masteryChoice) {
+        pool.push(masteryChoice);
+        elementUpgradePool.push(masteryChoice);
+      }
+    }
+  }
+
   if (game.powers.arc.unlocked && !consumed.has("arc")) addElementUpgradeChoices(pool, "arc", elementUpgradePool);
   for (const key of unlockedPowers) {
     if (consumed.has(key)) continue;
