@@ -5700,3 +5700,54 @@ function updateFullscreenButton() {
 function saveMeta(meta) {
   localStorage.setItem(SAVE_KEY, JSON.stringify(meta));
 }
+
+// Runtime safeguard: restore combo floating text helpers if they were dropped in a merge.
+function spawnComboFloatingText(text, color, x = null, y = null) {
+  if (!Array.isArray(game.comboFloatingTexts)) game.comboFloatingTexts = [];
+  const posX = x == null ? WIDTH * 0.5 : x;
+  const posY = y == null ? HEIGHT * 0.35 : y;
+  game.comboFloatingTexts.push({
+    text,
+    color,
+    x: posX,
+    y: posY,
+    vx: (Math.random() - 0.5) * 20,
+    vy: -40,
+    life: 1.2,
+    maxLife: 1.2,
+    scale: 1,
+  });
+}
+
+function updateComboFloatingTexts(dt) {
+  if (!Array.isArray(game.comboFloatingTexts)) game.comboFloatingTexts = [];
+  for (const t of game.comboFloatingTexts) {
+    t.life -= dt;
+    t.y += t.vy * dt;
+    t.x += t.vx * dt;
+    t.scale = Math.max(0.6, Math.min(1, t.life / t.maxLife) * 1.4);
+  }
+  game.comboFloatingTexts = game.comboFloatingTexts.filter((t) => t.life > 0);
+}
+
+function drawComboFloatingTexts() {
+  if (!Array.isArray(game.comboFloatingTexts) || game.comboFloatingTexts.length === 0) return;
+  ctx.font = "bold 28px Arial";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (const t of game.comboFloatingTexts) {
+    const prog = Math.max(0, t.life / t.maxLife);
+    ctx.globalAlpha = Math.min(1, prog * 1.5);
+    ctx.fillStyle = t.color;
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.scale(t.scale, t.scale);
+    ctx.fillText(t.text, 0, 0);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+}
