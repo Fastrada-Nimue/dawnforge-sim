@@ -569,12 +569,12 @@
   </style>
 </head>
 <body>
-  <div class="build-banner">Build 20260319o</div>
+  <div class="build-banner">Build 20260319p</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
-        <span class="build-tag">Build 20260319k</span>
-        <button id="test-synergy-btn-top" class="arena-mini-btn" title="Toggle Test Synergy Panel" onclick="window.__toggleTestSynergyPanel && window.__toggleTestSynergyPanel()">TEST</button>
+        <span class="build-tag">Build 20260319p</span>
+        <button id="test-synergy-btn-top" class="arena-mini-btn" title="Show Test Synergy Panel">TEST</button>
         <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
         <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
         <button id="restart-btn" class="arena-mini-btn">Restart Run</button>
@@ -589,7 +589,7 @@
         <div id="overlay-cards" class="cards"></div>
       </div>
 
-      <button id="test-synergy-btn" title="Test Synergies" onclick="window.__toggleTestSynergyPanel && window.__toggleTestSynergyPanel()">TEST</button>
+      <button id="test-synergy-btn" title="Show Test Synergies">TEST</button>
       <div id="test-synergy-panel">
         <h4>Test Synergies</h4>
         <div class="test-synergy-group">
@@ -623,7 +623,7 @@
       </div>
 
       <button id="start-btn" class="btn">Start New Run</button>
-      <button id="test-synergy-btn-side" class="btn" style="margin-top:4px;background:linear-gradient(180deg,#3f1f1f,#271313);border-color:#8c3e2f;color:#ffd9b0;" onclick="window.__toggleTestSynergyPanel && window.__toggleTestSynergyPanel()">Open Test Panel</button>
+      <button id="test-synergy-btn-side" class="btn" style="margin-top:4px;background:linear-gradient(180deg,#3f1f1f,#271313);border-color:#8c3e2f;color:#ffd9b0;">Open Test Panel</button>
 
       <section class="meta">
         <h3 class="title" style="font-size:13px;margin:0 0 8px;">Characters</h3>
@@ -649,36 +649,6 @@
     </aside>
   </div>
 
-  <script>
-    // Fallback panel toggle that works even if main.js fails early.
-    (function () {
-      function wireFallbackToggle() {
-        var panel = document.getElementById("test-synergy-panel");
-        if (!panel) return;
-
-        window.__toggleTestSynergyPanel = function () {
-          panel.classList.toggle("visible");
-          panel.style.display = panel.classList.contains("visible") ? "block" : "none";
-        };
-
-        var ids = ["test-synergy-btn", "test-synergy-btn-top", "test-synergy-btn-side"];
-        for (var i = 0; i < ids.length; i++) {
-          var el = document.getElementById(ids[i]);
-          if (!el) continue;
-          el.addEventListener("click", function (ev) {
-            ev.preventDefault();
-            window.__toggleTestSynergyPanel();
-          });
-        }
-      }
-
-      if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", wireFallbackToggle);
-      } else {
-        wireFallbackToggle();
-      }
-    })();
-  </script>
-  <script defer src="./src/main.js?v=20260319o"></script>
+  <script defer src="./src/main.js?v=20260319p"></script>
 </body>
 </html>
