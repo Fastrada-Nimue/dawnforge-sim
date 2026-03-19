@@ -475,13 +475,13 @@
       left: 10px;
       z-index: 10002;
       border: 1px solid #7d6a3d;
-      background: rgba(30, 26, 15, 0.98);
+      background: rgba(22, 18, 8, 0.98);
       border-radius: 10px;
-      padding: 12px;
-      width: 280px;
+      padding: 14px 12px 12px;
+      width: 310px;
       max-height: calc(100vh - 92px);
       overflow-y: auto;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
       display: block;
       pointer-events: auto;
     }
@@ -489,41 +489,76 @@
       display: block;
     }
     #test-synergy-panel h4 {
-      margin: 0 0 10px;
-      font-size: 13px;
+      margin: 0 0 12px;
+      font-size: 12px;
       color: #ffd98e;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
+      border-bottom: 1px solid #5a4a20;
+      padding-bottom: 8px;
     }
     .test-synergy-group {
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
-    .test-synergy-group > div {
-      font-size: 11px;
+    .test-synergy-group-label {
+      font-size: 10px;
       color: #e0a86a;
-      margin-bottom: 6px;
-      font-weight: 700;
+      margin-bottom: 8px;
+      font-weight: 800;
       text-transform: uppercase;
+      letter-spacing: 0.06em;
     }
     .test-synergy-options {
       display: flex;
-      flex-direction: column;
-      gap: 4px;
+      flex-wrap: wrap;
+      gap: 5px;
     }
     .test-synergy-option {
-      background: #2a2410;
-      border: 1px solid #5b4f2f;
-      color: #d4c5a0;
-      padding: 6px 8px;
-      border-radius: 4px;
+      background: #1e1a0a;
+      border: 1px solid #4a3e1e;
+      color: #c8b880;
+      padding: 0;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 11px;
-      transition: all 120ms ease;
+      transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 82px;
+      flex: 1 1 82px;
+      max-width: 130px;
+      text-align: center;
+      overflow: hidden;
+      user-select: none;
     }
     .test-synergy-option:hover {
-      background: #3a3318;
-      border-color: #8b7a4a;
-      color: #ffd98e;
+      background: #2e2810;
+      border-color: #9a7a30;
+      color: #ffe9a8;
+    }
+    .test-synergy-option.active {
+      background: #3a2e05;
+      border-color: #ffd060;
+      color: #ffe060;
+      box-shadow: 0 0 8px rgba(255, 200, 60, 0.35);
+    }
+    .test-synergy-option .tsyn-name {
+      display: block;
+      font-weight: 700;
+      padding: 6px 6px 2px;
+      font-size: 11px;
+      letter-spacing: 0.02em;
+    }
+    .test-synergy-option .tsyn-ing {
+      display: block;
+      font-size: 9px;
+      color: #806848;
+      padding: 0 6px 6px;
+      line-height: 1.2;
+    }
+    .test-synergy-option.active .tsyn-ing {
+      color: #c09030;
     }
     #test-synergy-btn-top {
       border-color: #ff9a5a;
@@ -534,7 +569,7 @@
   </style>
 </head>
 <body>
-  <div class="build-banner">Build 20260319m</div>
+  <div class="build-banner">Build 20260319n</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
@@ -558,15 +593,15 @@
       <div id="test-synergy-panel">
         <h4>Test Synergies</h4>
         <div class="test-synergy-group">
-          <div>Pair Combos</div>
+          <div class="test-synergy-group-label">Pair Combos</div>
           <div class="test-synergy-options" id="test-pair-options"></div>
         </div>
         <div class="test-synergy-group">
-          <div>Triple Combos</div>
+          <div class="test-synergy-group-label">Triple Combos</div>
           <div class="test-synergy-options" id="test-triple-options"></div>
         </div>
         <div class="test-synergy-group">
-          <div>Apex Combos</div>
+          <div class="test-synergy-group-label">Apex Combos</div>
           <div class="test-synergy-options" id="test-apex-options"></div>
         </div>
       </div>
@@ -644,6 +679,6 @@
       }
     })();
   </script>
-  <script defer src="./src/main.js?v=20260319m"></script>
+  <script defer src="./src/main.js?v=20260319n"></script>
 </body>
 </html>
