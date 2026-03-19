@@ -449,132 +449,14 @@
         font-size: 15px;
       }
     }
-    #test-synergy-btn {
-      position: absolute;
-      left: 14px;
-      bottom: 14px;
-      z-index: 8;
-      background: #bf2f2f;
-      border: 1px solid #ff9a5a;
-      color: #fff2db;
-      padding: 9px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
-    }
-    #test-synergy-btn:hover {
-      filter: brightness(1.2);
-    }
-    #test-synergy-panel {
-      position: fixed;
-      top: 76px;
-      left: 10px;
-      z-index: 10002;
-      border: 1px solid #7d6a3d;
-      background: rgba(22, 18, 8, 0.98);
-      border-radius: 10px;
-      padding: 14px 12px 12px;
-      width: 310px;
-      max-height: calc(100vh - 92px);
-      overflow-y: auto;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
-      display: block;
-      pointer-events: auto;
-    }
-    #test-synergy-panel.visible {
-      display: block;
-    }
-    #test-synergy-panel h4 {
-      margin: 0 0 12px;
-      font-size: 12px;
-      color: #ffd98e;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      border-bottom: 1px solid #5a4a20;
-      padding-bottom: 8px;
-    }
-    .test-synergy-group {
-      margin-bottom: 14px;
-    }
-    .test-synergy-group-label {
-      font-size: 10px;
-      color: #e0a86a;
-      margin-bottom: 8px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .test-synergy-options {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-    }
-    .test-synergy-option {
-      background: #1e1a0a;
-      border: 1px solid #4a3e1e;
-      color: #c8b880;
-      padding: 0;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 11px;
-      transition: background 100ms ease, border-color 100ms ease, color 100ms ease;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-width: 82px;
-      flex: 1 1 82px;
-      max-width: 130px;
-      text-align: center;
-      overflow: hidden;
-      user-select: none;
-    }
-    .test-synergy-option:hover {
-      background: #2e2810;
-      border-color: #9a7a30;
-      color: #ffe9a8;
-    }
-    .test-synergy-option.active {
-      background: #3a2e05;
-      border-color: #ffd060;
-      color: #ffe060;
-      box-shadow: 0 0 8px rgba(255, 200, 60, 0.35);
-    }
-    .test-synergy-option .tsyn-name {
-      display: block;
-      font-weight: 700;
-      padding: 6px 6px 2px;
-      font-size: 11px;
-      letter-spacing: 0.02em;
-    }
-    .test-synergy-option .tsyn-ing {
-      display: block;
-      font-size: 9px;
-      color: #806848;
-      padding: 0 6px 6px;
-      line-height: 1.2;
-    }
-    .test-synergy-option.active .tsyn-ing {
-      color: #c09030;
-    }
-    #test-synergy-btn-top {
-      border-color: #ff9a5a;
-      background: #bf2f2f;
-      color: #fff2db;
-      font-weight: 800;
-    }
   </style>
 </head>
 <body>
-  <div class="build-banner">Build 20260319v</div>
+  <div class="build-banner">Build 20260319w</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
-        <span class="build-tag">Build 20260319v</span>
-        <button id="test-synergy-btn-top" class="arena-mini-btn" title="Show Test Synergy Panel">TEST</button>
+        <span class="build-tag">Build 20260319w</span>
         <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
         <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
         <button id="restart-btn" class="arena-mini-btn">Restart Run</button>
@@ -587,23 +469,6 @@
       <div class="overlay">
         <h3 id="overlay-title">Run Feed</h3>
         <div id="overlay-cards" class="cards"></div>
-      </div>
-
-      <button id="test-synergy-btn" title="Show Test Synergies">TEST</button>
-      <div id="test-synergy-panel">
-        <h4>Test Synergies</h4>
-        <div class="test-synergy-group">
-          <div class="test-synergy-group-label">Pair Combos</div>
-          <div class="test-synergy-options" id="test-pair-options"></div>
-        </div>
-        <div class="test-synergy-group">
-          <div class="test-synergy-group-label">Triple Combos</div>
-          <div class="test-synergy-options" id="test-triple-options"></div>
-        </div>
-        <div class="test-synergy-group">
-          <div class="test-synergy-group-label">Apex Combos</div>
-          <div class="test-synergy-options" id="test-apex-options"></div>
-        </div>
       </div>
     </section>
 
@@ -623,7 +488,6 @@
       </div>
 
       <button id="start-btn" class="btn">Start New Run</button>
-      <button id="test-synergy-btn-side" class="btn" style="margin-top:4px;background:linear-gradient(180deg,#3f1f1f,#271313);border-color:#8c3e2f;color:#ffd9b0;">Open Test Panel</button>
 
       <section class="meta">
         <h3 class="title" style="font-size:13px;margin:0 0 8px;">Characters</h3>
@@ -649,6 +513,6 @@
     </aside>
   </div>
 
-  <script defer src="./src/main.js?v=20260319v"></script>
+  <script defer src="./src/main.js?v=20260319w"></script>
 </body>
 </html>
