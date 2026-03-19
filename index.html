@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dawnforge Roguelite Prototype</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Dawnforge Roguelite Prototype - Build 20260319d</title>
   <style>
     :root {
       --bg0: #0f1115;
@@ -68,6 +71,35 @@
       font-size: 11px;
       padding: 6px 9px;
       cursor: pointer;
+    }
+    .build-tag {
+      border: 1px solid #497d43;
+      background: #1a3b1c;
+      color: #c7ffc8;
+      border-radius: 6px;
+      font-size: 10px;
+      padding: 6px 8px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+    .build-banner {
+      position: fixed;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      border: 2px solid #5cff72;
+      background: #112b14;
+      color: #c7ffd0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font: 800 12px/1 "Trebuchet MS", "Segoe UI", sans-serif;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+      pointer-events: none;
     }
     .arena-icon-btn {
       width: 30px;
@@ -418,27 +450,30 @@
       }
     }
     #test-synergy-btn {
-      position: fixed;
-      bottom: 12px;
-      left: 12px;
-      z-index: 100;
-      background: #6b4c1e;
-      border: 1px solid #8b6f1f;
-      color: #ffd98e;
-      padding: 8px 12px;
-      border-radius: 6px;
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      z-index: 8;
+      background: #bf2f2f;
+      border: 1px solid #ff9a5a;
+      color: #fff2db;
+      padding: 9px 12px;
+      border-radius: 8px;
       cursor: pointer;
       font-size: 12px;
-      font-weight: 700;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
     }
     #test-synergy-btn:hover {
       filter: brightness(1.2);
     }
     #test-synergy-panel {
-      position: fixed;
-      bottom: 60px;
-      left: 12px;
-      z-index: 99;
+      position: absolute;
+      bottom: 58px;
+      left: 14px;
+      z-index: 7;
       border: 1px solid #7d6a3d;
       background: rgba(30, 26, 15, 0.98);
       border-radius: 10px;
@@ -489,12 +524,21 @@
       border-color: #8b7a4a;
       color: #ffd98e;
     }
+    #test-synergy-btn-top {
+      border-color: #ff9a5a;
+      background: #bf2f2f;
+      color: #fff2db;
+      font-weight: 800;
+    }
   </style>
 </head>
 <body>
+  <div class="build-banner">Build 20260319d</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
+        <span class="build-tag">Build 20260319d</span>
+        <button id="test-synergy-btn-top" class="arena-mini-btn" title="Toggle Test Synergy Panel">TEST</button>
         <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
         <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
         <button id="restart-btn" class="arena-mini-btn">Restart Run</button>
@@ -507,6 +551,23 @@
       <div class="overlay">
         <h3 id="overlay-title">Run Feed</h3>
         <div id="overlay-cards" class="cards"></div>
+      </div>
+
+      <button id="test-synergy-btn" title="Test Synergies">TEST</button>
+      <div id="test-synergy-panel">
+        <h4>Test Synergies</h4>
+        <div class="test-synergy-group">
+          <div>Pair Combos</div>
+          <div class="test-synergy-options" id="test-pair-options"></div>
+        </div>
+        <div class="test-synergy-group">
+          <div>Triple Combos</div>
+          <div class="test-synergy-options" id="test-triple-options"></div>
+        </div>
+        <div class="test-synergy-group">
+          <div>Apex Combos</div>
+          <div class="test-synergy-options" id="test-apex-options"></div>
+        </div>
       </div>
     </section>
 
@@ -551,23 +612,6 @@
     </aside>
   </div>
 
-  <button id="test-synergy-btn" title="Test Synergies">⚗ TEST</button>
-  <div id="test-synergy-panel">
-    <h4>Test Synergies</h4>
-    <div class="test-synergy-group">
-      <div>Pair Combos</div>
-      <div class="test-synergy-options" id="test-pair-options"></div>
-    </div>
-    <div class="test-synergy-group">
-      <div>Triple Combos</div>
-      <div class="test-synergy-options" id="test-triple-options"></div>
-    </div>
-    <div class="test-synergy-group">
-      <div>Apex Combos</div>
-      <div class="test-synergy-options" id="test-apex-options"></div>
-    </div>
-  </div>
-
-  <script defer src="./src/main.js?v=202603183"></script>
+  <script defer src="./src/main.js?v=20260319d"></script>
 </body>
 </html>
