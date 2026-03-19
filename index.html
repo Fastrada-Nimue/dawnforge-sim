@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Dawnforge Roguelite Prototype - Build 20260319x</title>
+  <title>Dawnforge Roguelite Prototype - Build 20260319y</title>
   <style>
     :root {
       --bg0: #0f1115;
@@ -485,11 +485,12 @@
   </style>
 </head>
 <body>
-  <div class="build-banner">Build 20260319x</div>
+  <div class="build-banner">Build 20260319y</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
-        <span class="build-tag">Build 20260319x</span>
+        <span class="build-tag">Build 20260319y</span>
+        <button id="cast-debug-toggle" class="arena-mini-btn" title="Toggle Cast Debug (` / F9 / Ctrl+Shift+D)">Debug</button>
         <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
         <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
         <button id="restart-btn" class="arena-mini-btn">Restart Run</button>
@@ -504,8 +505,8 @@
         <div id="overlay-cards" class="cards"></div>
       </div>
       <div id="cast-debug-panel" class="cast-debug-panel" aria-live="polite">
-        <div class="cast-debug-head">Cast Debug (F9)</div>
-        <pre id="cast-debug-body" class="cast-debug-body">Press F9 to toggle cast debug.</pre>
+        <div class="cast-debug-head">Cast Debug (F9 / ` / Ctrl+Shift+D)</div>
+        <pre id="cast-debug-body" class="cast-debug-body">Use Debug button or hotkey to toggle cast debug.</pre>
       </div>
     </section>
 
@@ -550,6 +551,6 @@
     </aside>
   </div>
 
-  <script defer src="./src/main.js?v=20260319x"></script>
+  <script defer src="./src/main.js?v=20260319y"></script>
 </body>
 </html>
