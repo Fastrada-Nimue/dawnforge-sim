@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Dawnforge Roguelite Prototype - Build 20260319e</title>
+  <title>Dawnforge Roguelite Prototype - Build 20260319f</title>
   <style>
     :root {
       --bg0: #0f1115;
@@ -473,7 +473,7 @@
       position: absolute;
       bottom: 58px;
       left: 14px;
-      z-index: 7;
+      z-index: 10001;
       border: 1px solid #7d6a3d;
       background: rgba(30, 26, 15, 0.98);
       border-radius: 10px;
@@ -483,6 +483,7 @@
       overflow-y: auto;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
       display: none;
+      pointer-events: auto;
     }
     #test-synergy-panel.visible {
       display: block;
@@ -533,12 +534,12 @@
   </style>
 </head>
 <body>
-  <div class="build-banner">Build 20260319e</div>
+  <div class="build-banner">Build 20260319f</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
-        <span class="build-tag">Build 20260319e</span>
-        <button id="test-synergy-btn-top" class="arena-mini-btn" title="Toggle Test Synergy Panel">TEST</button>
+        <span class="build-tag">Build 20260319f</span>
+        <button id="test-synergy-btn-top" class="arena-mini-btn" title="Toggle Test Synergy Panel" onclick="window.__toggleTestSynergyPanel && window.__toggleTestSynergyPanel()">TEST</button>
         <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
         <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
         <button id="restart-btn" class="arena-mini-btn">Restart Run</button>
@@ -553,7 +554,7 @@
         <div id="overlay-cards" class="cards"></div>
       </div>
 
-      <button id="test-synergy-btn" title="Test Synergies">TEST</button>
+      <button id="test-synergy-btn" title="Test Synergies" onclick="window.__toggleTestSynergyPanel && window.__toggleTestSynergyPanel()">TEST</button>
       <div id="test-synergy-panel">
         <h4>Test Synergies</h4>
         <div class="test-synergy-group">
@@ -587,6 +588,7 @@
       </div>
 
       <button id="start-btn" class="btn">Start New Run</button>
+      <button id="test-synergy-btn-side" class="btn" style="margin-top:4px;background:linear-gradient(180deg,#3f1f1f,#271313);border-color:#8c3e2f;color:#ffd9b0;" onclick="window.__toggleTestSynergyPanel && window.__toggleTestSynergyPanel()">Open Test Panel</button>
 
       <section class="meta">
         <h3 class="title" style="font-size:13px;margin:0 0 8px;">Characters</h3>
@@ -612,6 +614,6 @@
     </aside>
   </div>
 
-  <script defer src="./src/main.js?v=20260319e"></script>
+  <script defer src="./src/main.js?v=20260319f"></script>
 </body>
 </html>
