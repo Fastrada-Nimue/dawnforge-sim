@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Dawnforge Roguelite Prototype - Build 20260319v</title>
+  <title>Dawnforge Roguelite Prototype - Build 20260319x</title>
   <style>
     :root {
       --bg0: #0f1115;
@@ -136,6 +136,39 @@
       border-radius: 10px;
       background: rgba(20, 25, 35, 0.95);
       padding: 10px;
+    }
+    .cast-debug-panel {
+      position: absolute;
+      right: 12px;
+      top: 44px;
+      z-index: 12;
+      width: min(420px, calc(100% - 24px));
+      border: 1px solid #6a7e9f;
+      border-radius: 8px;
+      background: rgba(8, 12, 18, 0.92);
+      color: #d8e8ff;
+      display: none;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+    }
+    .cast-debug-panel.visible {
+      display: block;
+    }
+    .cast-debug-head {
+      font: 700 11px/1.2 "Trebuchet MS", "Segoe UI", sans-serif;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #bcd7ff;
+      border-bottom: 1px solid #3a4f6f;
+      padding: 7px 9px;
+    }
+    .cast-debug-body {
+      margin: 0;
+      padding: 8px 9px;
+      max-height: 180px;
+      overflow: auto;
+      font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      white-space: pre-wrap;
+      color: #d7e8ff;
     }
     .arena-wrap:fullscreen .overlay,
     .arena-wrap:-webkit-full-screen .overlay {
@@ -452,11 +485,11 @@
   </style>
 </head>
 <body>
-  <div class="build-banner">Build 20260319w</div>
+  <div class="build-banner">Build 20260319x</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
-        <span class="build-tag">Build 20260319w</span>
+        <span class="build-tag">Build 20260319x</span>
         <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
         <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
         <button id="restart-btn" class="arena-mini-btn">Restart Run</button>
@@ -469,6 +502,10 @@
       <div class="overlay">
         <h3 id="overlay-title">Run Feed</h3>
         <div id="overlay-cards" class="cards"></div>
+      </div>
+      <div id="cast-debug-panel" class="cast-debug-panel" aria-live="polite">
+        <div class="cast-debug-head">Cast Debug (F9)</div>
+        <pre id="cast-debug-body" class="cast-debug-body">Press F9 to toggle cast debug.</pre>
       </div>
     </section>
 
@@ -513,6 +550,6 @@
     </aside>
   </div>
 
-  <script defer src="./src/main.js?v=20260319w"></script>
+  <script defer src="./src/main.js?v=20260319x"></script>
 </body>
 </html>
