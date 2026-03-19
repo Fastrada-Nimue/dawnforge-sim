@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Dawnforge Roguelite Prototype - Build 20260319h</title>
+  <title>Dawnforge Roguelite Prototype - Build 20260319i</title>
   <style>
     :root {
       --bg0: #0f1115;
@@ -470,19 +470,19 @@
       filter: brightness(1.2);
     }
     #test-synergy-panel {
-      position: absolute;
-      bottom: 58px;
-      left: 14px;
-      z-index: 10001;
+      position: fixed;
+      top: 76px;
+      left: 10px;
+      z-index: 10002;
       border: 1px solid #7d6a3d;
       background: rgba(30, 26, 15, 0.98);
       border-radius: 10px;
       padding: 12px;
       width: 280px;
-      max-height: 400px;
+      max-height: calc(100vh - 92px);
       overflow-y: auto;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-      display: none;
+      display: block;
       pointer-events: auto;
     }
     #test-synergy-panel.visible {
@@ -534,11 +534,11 @@
   </style>
 </head>
 <body>
-  <div class="build-banner">Build 20260319h</div>
+  <div class="build-banner">Build 20260319i</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
-        <span class="build-tag">Build 20260319h</span>
+        <span class="build-tag">Build 20260319i</span>
         <button id="test-synergy-btn-top" class="arena-mini-btn" title="Toggle Test Synergy Panel" onclick="window.__toggleTestSynergyPanel && window.__toggleTestSynergyPanel()">TEST</button>
         <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
         <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
@@ -644,6 +644,6 @@
       }
     })();
   </script>
-  <script defer src="./src/main.js?v=20260319h"></script>
+  <script defer src="./src/main.js?v=20260319i"></script>
 </body>
 </html>
