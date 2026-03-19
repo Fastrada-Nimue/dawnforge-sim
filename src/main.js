@@ -25,9 +25,73 @@ const ui = {
   restartBtn: document.getElementById("restart-btn"),
   popoutBtn: document.getElementById("arena-popout-btn"),
   fullscreenBtn: document.getElementById("arena-fullscreen-btn"),
+  castDebugToggleBtn: document.getElementById("cast-debug-toggle"),
+  castDebugPanel: document.getElementById("cast-debug-panel"),
+  castDebugBody: document.getElementById("cast-debug-body"),
   toast: document.getElementById("toast"),
 };
 
+const castDebug = {
+  enabled: false,
+  logs: [],
+};
+
+function renderCastDebug() {
+  if (!ui.castDebugPanel || !ui.castDebugBody) return;
+  ui.castDebugPanel.classList.toggle("visible", castDebug.enabled);
+  if (!castDebug.enabled) return;
+  const lines = castDebug.logs.map((entry) => {
+    const details = entry.details ? ` | ${entry.details}` : "";
+    return `[${entry.time}] ${entry.msg}${details}`;
+  });
+  ui.castDebugBody.textContent = lines.join("\n") || "No cast logs yet.";
+}
+
+function logCastDebug(msg, details = "") {
+  const stamp = new Date().toISOString().slice(11, 19);
+  castDebug.logs.push({ time: stamp, msg, details });
+  if (castDebug.logs.length > 22) castDebug.logs.shift();
+  renderCastDebug();
+}
+
+function toggleCastDebug(reason = "") {
+  castDebug.enabled = !castDebug.enabled;
+  const details = reason ? `via ${reason}` : "";
+  logCastDebug(castDebug.enabled ? "Cast debug enabled" : "Cast debug disabled", details);
+  setToast(castDebug.enabled ? "Cast debug ON" : "Cast debug OFF", "good");
+  renderCastDebug();
+}
+
+function getSourceElementsForPowerKey(key) {
+  if (!key) return [];
+  if (key === "magma") return ["fire", "earth"];
+  const apex = getApexDef(key);
+  if (apex) return [apex.a, apex.b, apex.c, apex.d];
+  const triple = TRIPLE_COMBO_DEFS.find((d) => d.key === key);
+  if (triple) return [triple.a, triple.b, triple.c];
+  const pair = COMBO_DEFS.find((d) => d.key === key);
+  if (pair) return [pair.a, pair.b];
+  if (basePowerOrder.includes(key)) return [key];
+  return [];
+}
+
+function diagnoseCastFailure(key, volleyPowers = []) {
+  if (!key) return "no selected power";
+  const p = game.powers && game.powers[key];
+  if (!p) return `missing power entry: ${key}`;
+  if (p.timer > 0) return `cooldown ${p.timer.toFixed(2)}s`;
+
+  const sources = getSourceElementsForPowerKey(key);
+  if (sources.length >= 2) {
+    const missing = sources.filter((src) => !(game.powers && game.powers[src] && game.powers[src].unlocked));
+    if (missing.length > 0) return `source locked: ${missing.join(",")}`;
+    if (volleyPowers.length > 0 && !volleyPowers.includes(key)) return "selected fusion not active in volley";
+  } else if (!p.unlocked) {
+    return "base power locked";
+  }
+
+  return "cast returned false (no spawn)";
+}
 const WIDTH = canvas.width;
 const HEIGHT = canvas.height;
 const MAX_WAVES = 30;
@@ -530,6 +594,27 @@ function setupUi() {
     document.addEventListener("MSFullscreenChange", updateFullscreenButton);
     updateFullscreenButton();
   }
+
+  if (ui.castDebugToggleBtn) {
+    ui.castDebugToggleBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleCastDebug("button");
+    });
+  }
+
+  // Delegated fallback keeps the button working if node references are stale.
+  document.addEventListener("click", (e) => {
+    if (e.defaultPrevented) return;
+    const target = e.target;
+    if (!target || typeof target.closest !== "function") return;
+    const btn = target.closest("#cast-debug-toggle");
+    if (!btn) return;
+    e.preventDefault();
+    toggleCastDebug("delegate");
+  });
+
+  renderCastDebug();
 }
 
 function openStartingElementOverlay() {
@@ -615,13 +700,20 @@ function setupInput() {
       if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
           input.mouseY >= box.y && input.mouseY <= box.y + box.h) {
         game.selectedCastKey = box.key;
+        logCastDebug("Selected power", box.key);
         setToast(`Selected ${box.label}.`, "good");
         return;
       }
     }
 
     input.mouseDown = true;
-    castSelectedPower(input.mouseX, input.mouseY);
+    const casted = !!castSelectedPower(input.mouseX, input.mouseY);
+    const volley = getUnlockedVolleyPowers();
+    if (casted) {
+      logCastDebug("Mouse cast success", `selected=${game.selectedCastKey || "none"} at ${Math.round(input.mouseX)},${Math.round(input.mouseY)}`);
+    } else {
+      logCastDebug("Mouse cast failed", diagnoseCastFailure(game.selectedCastKey, volley));
+    }
   });
 
   canvas.addEventListener("mouseup", (e) => {
@@ -656,6 +748,7 @@ function setupInput() {
         if (input.mouseX >= box.x && input.mouseX <= box.x + box.w &&
             input.mouseY >= box.y && input.mouseY <= box.y + box.h) {
           game.selectedCastKey = box.key;
+          logCastDebug("Selected power (touch)", box.key);
           setToast(`Selected ${box.label}.`, "good");
           e.preventDefault();
           return;
@@ -663,7 +756,13 @@ function setupInput() {
       }
 
       input.mouseDown = true;
-      castSelectedPower(input.mouseX, input.mouseY);
+      const casted = !!castSelectedPower(input.mouseX, input.mouseY);
+      const volley = getUnlockedVolleyPowers();
+      if (casted) {
+        logCastDebug("Touch cast success", `selected=${game.selectedCastKey || "none"} at ${Math.round(input.mouseX)},${Math.round(input.mouseY)}`);
+      } else {
+        logCastDebug("Touch cast failed", diagnoseCastFailure(game.selectedCastKey, volley));
+      }
       e.preventDefault();
     }
   }, { passive: false });
@@ -684,8 +783,15 @@ function setupInput() {
   });
 
   window.addEventListener("keydown", (e) => {
-    void e;
-  });
+    const isF9 = e.key === "F9";
+    const isBacktick = e.key === "`" || e.code === "Backquote";
+    const isCtrlShiftD = (e.key === "D" || e.key === "d") && e.ctrlKey && e.shiftKey;
+    if (isF9 || isBacktick || isCtrlShiftD) {
+      const reason = isF9 ? "F9" : isBacktick ? "`" : "Ctrl+Shift+D";
+      toggleCastDebug(reason);
+      e.preventDefault();
+    }
+  }, true);
 }
 
 function startGame() {
