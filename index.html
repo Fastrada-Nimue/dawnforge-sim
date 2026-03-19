@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Dawnforge Roguelite Prototype - Build 20260319f</title>
+  <title>Dawnforge Roguelite Prototype - Build 20260319g</title>
   <style>
     :root {
       --bg0: #0f1115;
@@ -534,11 +534,11 @@
   </style>
 </head>
 <body>
-  <div class="build-banner">Build 20260319f</div>
+  <div class="build-banner">Build 20260319g</div>
   <div class="app">
     <section class="arena-wrap">
       <div class="arena-tools">
-        <span class="build-tag">Build 20260319f</span>
+        <span class="build-tag">Build 20260319g</span>
         <button id="test-synergy-btn-top" class="arena-mini-btn" title="Toggle Test Synergy Panel" onclick="window.__toggleTestSynergyPanel && window.__toggleTestSynergyPanel()">TEST</button>
         <button id="arena-popout-btn" class="arena-mini-btn" title="Open In Separate Window">Pop Out</button>
         <button id="arena-fullscreen-btn" class="arena-mini-btn arena-icon-btn" title="Fullscreen">&#9974;</button>
@@ -614,6 +614,36 @@
     </aside>
   </div>
 
-  <script defer src="./src/main.js?v=20260319f"></script>
+  <script>
+    // Fallback panel toggle that works even if main.js fails early.
+    (function () {
+      function wireFallbackToggle() {
+        var panel = document.getElementById("test-synergy-panel");
+        if (!panel) return;
+
+        window.__toggleTestSynergyPanel = function () {
+          panel.classList.toggle("visible");
+          panel.style.display = panel.classList.contains("visible") ? "block" : "none";
+        };
+
+        var ids = ["test-synergy-btn", "test-synergy-btn-top", "test-synergy-btn-side"];
+        for (var i = 0; i < ids.length; i++) {
+          var el = document.getElementById(ids[i]);
+          if (!el) continue;
+          el.addEventListener("click", function (ev) {
+            ev.preventDefault();
+            window.__toggleTestSynergyPanel();
+          });
+        }
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", wireFallbackToggle);
+      } else {
+        wireFallbackToggle();
+      }
+    })();
+  </script>
+  <script defer src="./src/main.js?v=20260319g"></script>
 </body>
 </html>
