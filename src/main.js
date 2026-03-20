@@ -1515,28 +1515,35 @@ function updateAmbientMotes(dt) {
 
 function castSelectedPower(tx, ty) {
   const volleyPowers = getUnlockedVolleyPowers();
-  if (volleyPowers.length === 0) return;
+  if (volleyPowers.length === 0) return false;
 
   let castAny = false;
+  const selectedInVolley = volleyPowers.includes(game.selectedCastKey) ? game.selectedCastKey : null;
 
-  // Prioritize the selected power, but still cast the rest of the volley so all element effects are visible.
-  if (game.selectedCastKey && game.powers[game.selectedCastKey] && game.powers[game.selectedCastKey].unlocked) {
-    castAny = tryCastPower(game.selectedCastKey, tx, ty, 0) || castAny;
+  if (game.selectedCastKey && !selectedInVolley) {
+    game.selectedCastKey = volleyPowers[0] || null;
   }
 
-  const others = volleyPowers.filter((k) => k !== game.selectedCastKey);
+  // Prioritize selected power, then cast remaining volley powers with slight spread.
+  if (selectedInVolley && game.powers[selectedInVolley] && game.powers[selectedInVolley].unlocked) {
+    castAny = tryCastPower(selectedInVolley, tx, ty, 0) || castAny;
+  }
+
+  const others = volleyPowers.filter((k) => k !== selectedInVolley);
   const center = (others.length - 1) * 0.5;
   for (let i = 0; i < others.length; i++) {
     const offset = (i - center) * 0.035;
     castAny = tryCastPower(others[i], tx, ty, offset) || castAny;
   }
 
-  // Fallback when nothing is selected.
-  if (!game.selectedCastKey) {
-    const baseCenter = (volleyPowers.length - 1) * 0.5;
-    for (let i = 0; i < volleyPowers.length; i++) {
-      const offset = (i - baseCenter) * 0.035;
-      castAny = tryCastPower(volleyPowers[i], tx, ty, offset) || castAny;
+  // Last-chance fallback: try any ready volley power directly if none fired.
+  if (!castAny) {
+    for (const key of volleyPowers) {
+      if (!game.powers[key] || game.powers[key].timer > 0) continue;
+      if (tryCastPower(key, tx, ty, 0)) {
+        castAny = true;
+        break;
+      }
     }
   }
 
